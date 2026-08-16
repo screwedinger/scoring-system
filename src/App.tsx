@@ -49,7 +49,7 @@ export default function App() {
 
   // Global Timer Interval
   useEffect(() => {
-    let interval: NodeJS.Timeout | null = null;
+    let interval: ReturnType<typeof setInterval> | null = null;
     if (isTimerRunning) {
       interval = setInterval(() => {
         tickTimer();
