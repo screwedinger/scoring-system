@@ -13,16 +13,25 @@ export type QuizPhase =
 
 export type PounceStatus = 'pending' | 'correct' | 'incorrect';
 
+export type BounceDirection = 'clockwise' | 'anticlockwise';
+
 export interface QuestionHistoryEntry {
-  questionNumber: number;
-  directTeamName: string;
-  bounceResult: {
-    awardedTeamNames: string[];
-    pointsEach: number;
-  } | null;
-  pounceResults: {
+  type: 'question' | 'special_round';
+  questionNumber?: number;
+  roundName: string;
+  direction?: BounceDirection;
+  directTeamName?: string;
+  bounceResult?: {
+    teamName: string;
+    points: number;
+  }[] | null;
+  pounceResults?: {
     teamName: string;
     status: 'correct' | 'incorrect';
+    points: number;
+  }[];
+  specialRoundResults?: {
+    teamName: string;
     points: number;
   }[];
   timestamp: string;

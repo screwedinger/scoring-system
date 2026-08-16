@@ -1,16 +1,19 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { Team, QuizPhase, PounceStatus, QuestionHistoryEntry } from './types';
+import type { Team, QuizPhase, PounceStatus, BounceDirection, QuestionHistoryEntry } from './types';
 
 interface QuizStore {
   teams: Team[];
   questionNumber: number;
+  roundNumber: number;
+  roundName: string;
+  bounceDirection: BounceDirection;
   directTeamIndex: number;
   phase: QuizPhase;
   timerSeconds: number;
   isTimerRunning: boolean;
   pounces: Record<number, PounceStatus>;
-  bounceAwardedTeams: number[];
+  bounceCustomPoints: Record<number, number>;
   historyLog: QuestionHistoryEntry[];
 
   // Actions
@@ -18,6 +21,7 @@ interface QuizStore {
   updateTeamName: (id: number, name: string) => void;
   manualAdjustScore: (id: number, delta: number) => void;
   setDirectTeam: (index: number) => void;
+  switchRound: (roundNum: number) => void;
 
   startQuestion: () => void;
   tickTimer: () => void;
@@ -26,13 +30,15 @@ interface QuizStore {
   skipToBounce: () => void;
 
   toggleBounceSelection: (teamId: number) => void;
+  setBouncePointsForTeam: (teamId: number, points: number) => void;
   confirmBounceAndReviewPounce: () => void;
 
   setPounceResult: (teamId: number, status: 'correct' | 'incorrect') => void;
+  togglePounceReviewKey: (teamId: number) => void;
   finalizeQuestion: () => void;
 
   nextQuestion: () => void;
-  applySpecialRoundScores: (adjustments: Record<number, number>) => void;
+  applySpecialRoundScores: (adjustments: Record<number, number>, specialTitle?: string) => void;
   resetQuiz: () => void;
 }
 
@@ -43,6 +49,9 @@ export const broadcastState = (state: any) => {
     quizChannel.postMessage({
       teams: state.teams,
       questionNumber: state.questionNumber,
+      roundName: state.roundName,
+      roundNumber: state.roundNumber,
+      bounceDirection: state.bounceDirection,
       directTeamIndex: state.directTeamIndex,
       phase: state.phase,
       timerSeconds: state.timerSeconds,
@@ -62,12 +71,15 @@ export const useQuizStore = create<QuizStore>()(
     (set, get) => ({
       teams: DEFAULT_TEAMS,
       questionNumber: 1,
+      roundNumber: 1,
+      roundName: 'Round 1',
+      bounceDirection: 'clockwise',
       directTeamIndex: 0,
       phase: 'IDLE',
       timerSeconds: 30,
       isTimerRunning: false,
       pounces: {},
-      bounceAwardedTeams: [],
+      bounceCustomPoints: {},
       historyLog: [],
 
       setTeamCount: (count) => {
@@ -102,13 +114,44 @@ export const useQuizStore = create<QuizStore>()(
 
       setDirectTeam: (index) => set({ directTeamIndex: index }),
 
+      switchRound: (roundNum) => {
+        const { teams } = get();
+        if (roundNum === 2) {
+          set({
+            roundNumber: 2,
+            roundName: 'Round 2',
+            bounceDirection: 'anticlockwise',
+            questionNumber: 1,
+            directTeamIndex: teams.length - 1,
+            phase: 'IDLE',
+            timerSeconds: 30,
+            isTimerRunning: false,
+            pounces: {},
+            bounceCustomPoints: {},
+          });
+        } else {
+          set({
+            roundNumber: 1,
+            roundName: 'Round 1',
+            bounceDirection: 'clockwise',
+            questionNumber: 1,
+            directTeamIndex: 0,
+            phase: 'IDLE',
+            timerSeconds: 30,
+            isTimerRunning: false,
+            pounces: {},
+            bounceCustomPoints: {},
+          });
+        }
+      },
+
       startQuestion: () => {
         set({
           phase: 'POUNCING',
           timerSeconds: 30,
           isTimerRunning: true,
           pounces: {},
-          bounceAwardedTeams: [],
+          bounceCustomPoints: {},
         });
       },
 
@@ -147,32 +190,40 @@ export const useQuizStore = create<QuizStore>()(
       },
 
       toggleBounceSelection: (teamId) => {
-        const { bounceAwardedTeams, pounces } = get();
+        const { bounceCustomPoints, pounces } = get();
         if (pounces[teamId]) return;
 
-        if (bounceAwardedTeams.includes(teamId)) {
-          set({ bounceAwardedTeams: bounceAwardedTeams.filter((id) => id !== teamId) });
+        const next = { ...bounceCustomPoints };
+        if (next[teamId] !== undefined) {
+          delete next[teamId];
         } else {
-          if (bounceAwardedTeams.length < 3) {
-            set({ bounceAwardedTeams: [...bounceAwardedTeams, teamId] });
-          }
+          const count = Object.keys(next).length + 1;
+          const defaultPoints = count === 1 ? 10 : count === 2 ? 5 : 3.3;
+          Object.keys(next).forEach((k) => {
+            next[Number(k)] = defaultPoints;
+          });
+          next[teamId] = defaultPoints;
         }
+        set({ bounceCustomPoints: next });
+      },
+
+      setBouncePointsForTeam: (teamId, points) => {
+        set((state) => ({
+          bounceCustomPoints: {
+            ...state.bounceCustomPoints,
+            [teamId]: points,
+          },
+        }));
       },
 
       confirmBounceAndReviewPounce: () => {
-        const { teams, bounceAwardedTeams, pounces } = get();
+        const { teams, bounceCustomPoints, pounces } = get();
         let updatedTeams = [...teams];
 
-        if (bounceAwardedTeams.length === 1) {
-          updatedTeams = updatedTeams.map((t) =>
-            t.id === bounceAwardedTeams[0] ? { ...t, score: t.score + 10 } : t
-          );
-        } else if (bounceAwardedTeams.length > 1) {
-          const splitPoints = Math.round((10 / bounceAwardedTeams.length) * 10) / 10;
-          updatedTeams = updatedTeams.map((t) =>
-            bounceAwardedTeams.includes(t.id) ? { ...t, score: t.score + splitPoints } : t
-          );
-        }
+        Object.entries(bounceCustomPoints).forEach(([idStr, pts]) => {
+          const id = Number(idStr);
+          updatedTeams = updatedTeams.map((t) => (t.id === id ? { ...t, score: t.score + pts } : t));
+        });
 
         const hasPounces = Object.keys(pounces).length > 0;
 
@@ -192,11 +243,21 @@ export const useQuizStore = create<QuizStore>()(
         }));
       },
 
+      togglePounceReviewKey: (teamId) => {
+        const { pounces } = get();
+        if (pounces[teamId] === undefined) return;
+        const current = pounces[teamId];
+        const nextStatus = current === 'pending' ? 'correct' : current === 'correct' ? 'incorrect' : 'correct';
+        set((state) => ({
+          pounces: { ...state.pounces, [teamId]: nextStatus },
+        }));
+      },
+
       finalizeQuestion: () => {
-        const { teams, pounces, questionNumber, directTeamIndex, bounceAwardedTeams, historyLog } = get();
+        const { teams, pounces, questionNumber, roundName, bounceDirection, directTeamIndex, bounceCustomPoints, historyLog } = get();
         let updatedTeams = [...teams];
 
-        const pounceDetails: QuestionHistoryEntry['pounceResults'] = [];
+        const pounceDetails: NonNullable<QuestionHistoryEntry['pounceResults']> = [];
 
         Object.entries(pounces).forEach(([idStr, status]) => {
           const id = Number(idStr);
@@ -213,15 +274,18 @@ export const useQuizStore = create<QuizStore>()(
         });
 
         const bounceResult =
-          bounceAwardedTeams.length > 0
-            ? {
-                awardedTeamNames: bounceAwardedTeams.map((id) => teams.find((t) => t.id === id)?.name || ''),
-                pointsEach: Math.round((10 / bounceAwardedTeams.length) * 10) / 10,
-              }
+          Object.keys(bounceCustomPoints).length > 0
+            ? Object.entries(bounceCustomPoints).map(([idStr, pts]) => ({
+                teamName: teams.find((t) => t.id === Number(idStr))?.name || '',
+                points: pts,
+              }))
             : null;
 
         const newLogEntry: QuestionHistoryEntry = {
+          type: 'question',
           questionNumber,
+          roundName,
+          direction: bounceDirection,
           directTeamName: teams[directTeamIndex]?.name || `Team ${directTeamIndex + 1}`,
           bounceResult,
           pounceResults: pounceDetails,
@@ -236,37 +300,65 @@ export const useQuizStore = create<QuizStore>()(
       },
 
       nextQuestion: () => {
-        const { teams, directTeamIndex, questionNumber } = get();
+        const { teams, directTeamIndex, questionNumber, bounceDirection } = get();
+        const step = bounceDirection === 'clockwise' ? 1 : -1;
+        const nextIndex = (directTeamIndex + step + teams.length) % teams.length;
+
         set({
           questionNumber: questionNumber + 1,
-          directTeamIndex: (directTeamIndex + 1) % teams.length,
+          directTeamIndex: nextIndex,
           phase: 'IDLE',
           timerSeconds: 30,
           isTimerRunning: false,
           pounces: {},
-          bounceAwardedTeams: [],
+          bounceCustomPoints: {},
         });
       },
 
-      applySpecialRoundScores: (adjustments) => {
-        set((state) => ({
-          teams: state.teams.map((t) => ({
+      applySpecialRoundScores: (adjustments, specialTitle = 'Special Round') => {
+        const { teams, historyLog } = get();
+        const results: NonNullable<QuestionHistoryEntry['specialRoundResults']> = [];
+
+        const updatedTeams = teams.map((t) => {
+          const delta = adjustments[t.id] || 0;
+          if (delta !== 0) {
+            results.push({
+              teamName: t.name,
+              points: delta,
+            });
+          }
+          return {
             ...t,
-            score: t.score + (adjustments[t.id] || 0),
-          })),
-        }));
+            score: t.score + delta,
+          };
+        });
+
+        const newLogEntry: QuestionHistoryEntry = {
+          type: 'special_round',
+          roundName: specialTitle,
+          specialRoundResults: results,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        };
+
+        set({
+          teams: updatedTeams,
+          historyLog: [newLogEntry, ...historyLog],
+        });
       },
 
       resetQuiz: () => {
         set({
           teams: DEFAULT_TEAMS,
           questionNumber: 1,
+          roundNumber: 1,
+          roundName: 'Round 1',
+          bounceDirection: 'clockwise',
           directTeamIndex: 0,
           phase: 'IDLE',
           timerSeconds: 30,
           isTimerRunning: false,
           pounces: {},
-          bounceAwardedTeams: [],
+          bounceCustomPoints: {},
           historyLog: [],
         });
       },
