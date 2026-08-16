@@ -1,54 +1,40 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { Team, QuizPhase, PounceStatus, QuizStateSnapshot } from './types';
+import type { Team, QuizPhase, PounceStatus } from './types';
 
 interface QuizStore {
   teams: Team[];
   questionNumber: number;
-  directTeamIndex: number; // 0 to N-1
+  directTeamIndex: number;
   phase: QuizPhase;
   timerSeconds: number;
   isTimerRunning: boolean;
-  pounces: Record<number, PounceStatus>; // teamId -> status
-  bounceCurrentIndex: number; // pointer in eligible bounce queue
-  history: QuizStateSnapshot[];
+  pounces: Record<number, PounceStatus>;
+  bounceAwardedTeams: number[];
 
   // Actions
   setTeamCount: (count: number) => void;
   updateTeamName: (id: number, name: string) => void;
   manualAdjustScore: (id: number, delta: number) => void;
   setDirectTeam: (index: number) => void;
-  
-  // Phase Controls
+
   startQuestion: () => void;
   tickTimer: () => void;
   toggleTimer: () => void;
   togglePounce: (teamId: number) => void;
-  finishPouncePhase: () => void;
-  
-  // Pounce Review
-  setPounceResult: (teamId: number, status: 'correct' | 'incorrect') => void;
-  proceedToBounce: () => void;
+  skipToBounce: () => void;
 
-  // Bounce Operations
-  awardBounceFull: (teamId: number) => void;
-  awardBounceSplit: (teamId1: number, teamId2: number) => void;
-  passBounce: () => void;
-  
-  // Round Completion & Reset
+  toggleBounceSelection: (teamId: number) => void;
+  confirmBounceAndReviewPounce: () => void;
+
+  setPounceResult: (teamId: number, status: 'correct' | 'incorrect') => void;
+  finalizeQuestion: () => void;
+
   nextQuestion: () => void;
   applySpecialRoundScores: (adjustments: Record<number, number>) => void;
-  undo: () => void;
   resetQuiz: () => void;
 }
 
-const DEFAULT_TEAMS: Team[] = Array.from({ length: 8 }, (_, i) => ({
-  id: i + 1,
-  name: `Team ${i + 1}`,
-  score: 0,
-}));
-
-// Broadcast channel instance for multi-window sync
 const quizChannel = typeof window !== 'undefined' ? new BroadcastChannel('quiz_display_channel') : null;
 
 export const broadcastState = (state: any) => {
@@ -64,6 +50,12 @@ export const broadcastState = (state: any) => {
   }
 };
 
+const DEFAULT_TEAMS: Team[] = Array.from({ length: 8 }, (_, i) => ({
+  id: i + 1,
+  name: `Team ${i + 1}`,
+  score: 0,
+}));
+
 export const useQuizStore = create<QuizStore>()(
   persist(
     (set, get) => ({
@@ -74,8 +66,7 @@ export const useQuizStore = create<QuizStore>()(
       timerSeconds: 30,
       isTimerRunning: false,
       pounces: {},
-      bounceCurrentIndex: 0,
-      history: [],
+      bounceAwardedTeams: [],
 
       setTeamCount: (count) => {
         const current = get().teams;
@@ -115,7 +106,7 @@ export const useQuizStore = create<QuizStore>()(
           timerSeconds: 30,
           isTimerRunning: true,
           pounces: {},
-          bounceCurrentIndex: 0,
+          bounceAwardedTeams: [],
         });
       },
 
@@ -123,7 +114,7 @@ export const useQuizStore = create<QuizStore>()(
         const { timerSeconds, isTimerRunning } = get();
         if (!isTimerRunning) return;
         if (timerSeconds <= 1) {
-          get().finishPouncePhase();
+          get().skipToBounce();
         } else {
           set({ timerSeconds: timerSeconds - 1 });
         }
@@ -146,12 +137,47 @@ export const useQuizStore = create<QuizStore>()(
         set({ pounces: nextPounces });
       },
 
-      finishPouncePhase: () => {
-        const pounces = get().pounces;
-        const hasPounces = Object.keys(pounces).length > 0;
+      skipToBounce: () => {
         set({
           isTimerRunning: false,
-          phase: hasPounces ? 'POUNCE_REVIEW' : 'BOUNCING',
+          phase: 'BOUNCING',
+        });
+      },
+
+      toggleBounceSelection: (teamId) => {
+        const { bounceAwardedTeams, pounces } = get();
+        if (pounces[teamId]) return; // Cannot select pounced teams
+
+        if (bounceAwardedTeams.includes(teamId)) {
+          set({ bounceAwardedTeams: bounceAwardedTeams.filter((id) => id !== teamId) });
+        } else {
+          if (bounceAwardedTeams.length < 3) {
+            set({ bounceAwardedTeams: [...bounceAwardedTeams, teamId] });
+          }
+        }
+      },
+
+      confirmBounceAndReviewPounce: () => {
+        const { teams, bounceAwardedTeams, pounces } = get();
+        let updatedTeams = [...teams];
+
+        // Award bounce points
+        if (bounceAwardedTeams.length === 1) {
+          updatedTeams = updatedTeams.map((t) =>
+            t.id === bounceAwardedTeams[0] ? { ...t, score: t.score + 10 } : t
+          );
+        } else if (bounceAwardedTeams.length > 1) {
+          const splitPoints = Math.round((10 / bounceAwardedTeams.length) * 10) / 10;
+          updatedTeams = updatedTeams.map((t) =>
+            bounceAwardedTeams.includes(t.id) ? { ...t, score: t.score + splitPoints } : t
+          );
+        }
+
+        const hasPounces = Object.keys(pounces).length > 0;
+
+        set({
+          teams: updatedTeams,
+          phase: hasPounces ? 'POUNCE_REVIEW' : 'QUESTION_END',
         });
       },
 
@@ -161,10 +187,10 @@ export const useQuizStore = create<QuizStore>()(
         }));
       },
 
-      proceedToBounce: () => {
+      finalizeQuestion: () => {
         const { teams, pounces } = get();
-        // Calculate and apply pounce scores
         let updatedTeams = [...teams];
+
         Object.entries(pounces).forEach(([idStr, status]) => {
           const id = Number(idStr);
           const delta = status === 'correct' ? 15 : -10;
@@ -173,32 +199,8 @@ export const useQuizStore = create<QuizStore>()(
 
         set({
           teams: updatedTeams,
-          phase: 'BOUNCING',
-          bounceCurrentIndex: 0,
+          phase: 'QUESTION_END',
         });
-      },
-
-      awardBounceFull: (teamId) => {
-        set((state) => ({
-          teams: state.teams.map((t) => (t.id === teamId ? { ...t, score: t.score + 10 } : t)),
-          phase: 'QUESTION_END',
-        }));
-      },
-
-      awardBounceSplit: (teamId1, teamId2) => {
-        set((state) => ({
-          teams: state.teams.map((t) => {
-            if (t.id === teamId1 || t.id === teamId2) {
-              return { ...t, score: t.score + 5 };
-            }
-            return t;
-          }),
-          phase: 'QUESTION_END',
-        }));
-      },
-
-      passBounce: () => {
-        set((state) => ({ bounceCurrentIndex: state.bounceCurrentIndex + 1 }));
       },
 
       nextQuestion: () => {
@@ -210,7 +212,7 @@ export const useQuizStore = create<QuizStore>()(
           timerSeconds: 30,
           isTimerRunning: false,
           pounces: {},
-          bounceCurrentIndex: 0,
+          bounceAwardedTeams: [],
         });
       },
 
@@ -223,10 +225,6 @@ export const useQuizStore = create<QuizStore>()(
         }));
       },
 
-      undo: () => {
-        // Simple placeholder for history rollback
-      },
-
       resetQuiz: () => {
         set({
           teams: DEFAULT_TEAMS,
@@ -236,7 +234,7 @@ export const useQuizStore = create<QuizStore>()(
           timerSeconds: 30,
           isTimerRunning: false,
           pounces: {},
-          bounceCurrentIndex: 0,
+          bounceAwardedTeams: [],
         });
       },
     }),
@@ -245,6 +243,7 @@ export const useQuizStore = create<QuizStore>()(
     }
   )
 );
+
 useQuizStore.subscribe((state) => {
   broadcastState(state);
 });

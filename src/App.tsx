@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useQuizStore } from './store';
 import { 
   Play, Pause, FastForward, RotateCcw, ArrowRight, 
-  CheckCircle, XCircle, Plus, Minus, Trophy, Sparkles, Settings
+  CheckCircle, XCircle, Plus, Minus, Trophy, Sparkles, ChevronDown, ChevronUp, Edit2, ExternalLink
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -15,35 +15,31 @@ export default function App() {
     timerSeconds,
     isTimerRunning,
     pounces,
-    bounceCurrentIndex,
+    bounceAwardedTeams,
     setTeamCount,
     updateTeamName,
     manualAdjustScore,
-    setDirectTeam,
     startQuestion,
     tickTimer,
     toggleTimer,
     togglePounce,
-    finishPouncePhase,
+    skipToBounce,
+    toggleBounceSelection,
+    confirmBounceAndReviewPounce,
     setPounceResult,
-    proceedToBounce,
-    awardBounceFull,
-    awardBounceSplit,
-    passBounce,
+    finalizeQuestion,
     nextQuestion,
     applySpecialRoundScores,
     resetQuiz
   } = useQuizStore();
 
-  // Local UI States
-  const [splitTeam1, setSplitTeam1] = useState<number | null>(null);
-  const [splitTeam2, setSplitTeam2] = useState<number | null>(null);
+  // Local UI State
+  const [showLeaderboard, setShowLeaderboard] = useState(true);
   const [isSpecialRoundOpen, setIsSpecialRoundOpen] = useState(false);
   const [specialScores, setSpecialScores] = useState<Record<number, number>>({});
   const [editingTeamId, setEditingTeamId] = useState<number | null>(null);
-  const [tempEditScore, setTempEditScore] = useState<string>('');
 
-  // Global Timer Interval
+  // Timer Tick
   useEffect(() => {
     let interval: NodeJS.Timeout | null = null;
     if (isTimerRunning) {
@@ -79,446 +75,408 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [phase, teams, togglePounce, toggleTimer, startQuestion]);
 
-  // Compute Eligible Bounce Queue (Clockwise starting from Direct Team, skipping Pouncers)
-  const eligibleBounceTeams = React.useMemo(() => {
-    if (teams.length === 0) return [];
-    const ordered: typeof teams = [];
-    for (let i = 0; i < teams.length; i++) {
-      const idx = (directTeamIndex + i) % teams.length;
-      const team = teams[idx];
-      // Exclude teams that took a pounce
-      if (!pounces[team.id]) {
-        ordered.push(team);
-      }
-    }
-    return ordered;
-  }, [teams, directTeamIndex, pounces]);
-
-  const activeBounceTeam = eligibleBounceTeams[bounceCurrentIndex] || null;
-
-  // Handlers
-  const handleSplitAward = () => {
-    if (splitTeam1 && splitTeam2 && splitTeam1 !== splitTeam2) {
-      awardBounceSplit(splitTeam1, splitTeam2);
-      setSplitTeam1(null);
-      setSplitTeam2(null);
-    }
-  };
-
   const handleSpecialSubmit = () => {
     applySpecialRoundScores(specialScores);
     setSpecialScores({});
     setIsSpecialRoundOpen(false);
-    confetti({ particleCount: 60, spread: 70, origin: { y: 0.6 } });
+    confetti({ particleCount: 50, spread: 60, origin: { y: 0.6 } });
   };
 
-  const triggerWinnerCelebration = () => {
-    confetti({ particleCount: 120, spread: 90, origin: { y: 0.5 } });
+  const getSplitPointsLabel = () => {
+    if (bounceAwardedTeams.length === 1) return '+10 pts to 1 Team';
+    if (bounceAwardedTeams.length === 2) return '+5 pts each (2 Teams)';
+    if (bounceAwardedTeams.length === 3) return '+3.3 pts each (3 Teams)';
+    return 'Select team(s)';
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
-      {/* Top Header */}
-      <header className="border-b border-slate-800 bg-slate-900/60 px-6 py-4 backdrop-blur flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <div className="bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 px-3 py-1 rounded-lg text-sm font-semibold tracking-wider">
-            QUESTION {questionNumber}
-          </div>
-          <div className="text-slate-400 text-sm">
-            Direct Turn: <span className="font-bold text-amber-400">{teams[directTeamIndex]?.name}</span>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-3">
-          {/* Team count selector */}
-          <div className="flex items-center bg-slate-800 rounded-lg p-1 border border-slate-700 text-xs">
-            {[8, 9, 10].map((count) => (
-              <button
-                key={count}
-                onClick={() => setTeamCount(count)}
-                className={`px-2.5 py-1 rounded font-medium transition ${
-                  teams.length === count ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                {count} Teams
-              </button>
-            ))}
-          </div>
-
-          <button
-            onClick={() => setIsSpecialRoundOpen(true)}
-            className="flex items-center gap-1.5 bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/30 px-3 py-1.5 rounded-lg text-xs font-semibold transition"
-          >
-            <Sparkles className="w-3.5 h-3.5" /> Special Round
-          </button>
-
-          <button
-            onClick={resetQuiz}
-            className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition"
-            title="Reset Quiz"
-          >
-            <RotateCcw className="w-4 h-4" />
-          </button>
-        </div>
-      </header>
-
-      {/* Main Controller Layout */}
-      <main className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-6 p-6 max-w-7xl mx-auto w-full">
-        {/* Left 2 Cols: Main Action Stage */}
-        <div className="lg:col-span-2 space-y-6 flex flex-col">
-          
-          {/* Phase 1: IDLE / POUNCING STAGE */}
-          {(phase === 'IDLE' || phase === 'POUNCING') && (
-            <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col gap-6 flex-1">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-xl font-bold tracking-tight">
-                    {phase === 'IDLE' ? 'Ready for Question' : '⚡ Pounce Window Active'}
-                  </h2>
-                  <p className="text-slate-400 text-xs mt-1">
-                    {phase === 'IDLE' 
-                      ? 'Press Space or Start to begin the 30-second pounce timer.'
-                      : 'Click teams or press 1–8 on keyboard to tag pounce slips.'}
-                  </p>
-                </div>
-
-                {/* 30s Countdown Display */}
-                <div className={`px-5 py-2.5 rounded-xl border text-3xl font-black font-mono tracking-tighter ${
-                  timerSeconds <= 5 
-                    ? 'bg-rose-950/60 border-rose-500 text-rose-400 animate-pulse' 
-                    : 'bg-slate-950 border-slate-800 text-indigo-400'
-                }`}>
-                  {timerSeconds}s
-                </div>
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex p-6 gap-6 font-sans select-none">
+      
+      {/* LEFT / CENTER: Dynamic Main Quiz Area */}
+      <div className="flex-1 flex flex-col gap-6">
+        
+        {/* PHASE 1: IDLE / POUNCING */}
+        {(phase === 'IDLE' || phase === 'POUNCING') && (
+          <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 shadow-2xl flex-1 flex flex-col gap-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-xs uppercase font-bold tracking-widest text-indigo-400">Pounce Window</span>
+                <h1 className="text-2xl font-black mt-0.5">
+                  {phase === 'IDLE' ? 'Ready to Start Question' : '⚡ 30s Pounce Timer Running'}
+                </h1>
               </div>
 
-              {/* Action Bar */}
-              <div className="flex gap-3">
-                {phase === 'IDLE' ? (
-                  <button
-                    onClick={startQuestion}
-                    className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-3 px-4 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/20 transition"
-                  >
-                    <Play className="w-5 h-5 fill-current" /> Start 30s Pounce Timer
-                  </button>
-                ) : (
-                  <>
-                    <button
-                      onClick={toggleTimer}
-                      className="flex-1 bg-slate-800 hover:bg-slate-700 font-semibold py-3 px-4 rounded-xl flex items-center justify-center gap-2 border border-slate-700 transition"
-                    >
-                      {isTimerRunning ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
-                      {isTimerRunning ? 'Pause Timer' : 'Resume Timer'}
-                    </button>
-                    <button
-                      onClick={finishPouncePhase}
-                      className="bg-amber-600 hover:bg-amber-500 text-white font-semibold py-3 px-6 rounded-xl flex items-center justify-center gap-2 transition"
-                    >
-                      <FastForward className="w-5 h-5" /> Finish Pounces
-                    </button>
-                  </>
-                )}
-              </div>
-
-              {/* Interactive Team Grid for Pounce */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-2 flex-1">
-                {teams.map((team, idx) => {
-                  const isDirect = idx === directTeamIndex;
-                  const isPounced = !!pounces[team.id];
-
-                  return (
-                    <button
-                      key={team.id}
-                      disabled={phase === 'IDLE'}
-                      onClick={() => togglePounce(team.id)}
-                      className={`relative p-4 rounded-xl border flex flex-col items-center justify-center gap-1 transition-all ${
-                        isPounced
-                          ? 'bg-rose-600/20 border-rose-500 text-rose-200 shadow-md shadow-rose-950'
-                          : 'bg-slate-950/60 border-slate-800 hover:border-slate-700 text-slate-300'
-                      } ${phase === 'IDLE' ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer active:scale-95'}`}
-                    >
-                      <span className="text-xs font-mono text-slate-500 absolute top-2 left-2">[{team.id}]</span>
-                      {isDirect && (
-                        <span className="absolute top-2 right-2 px-1.5 py-0.5 bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-bold rounded">
-                          DIRECT
-                        </span>
-                      )}
-                      <span className="font-semibold text-sm mt-3">{team.name}</span>
-                      <span className={`text-xs font-bold uppercase tracking-wider mt-1 px-2 py-0.5 rounded ${
-                        isPounced ? 'bg-rose-500 text-white' : 'bg-slate-800 text-slate-400'
-                      }`}>
-                        {isPounced ? 'Pounced' : 'Pass'}
-                      </span>
-                    </button>
-                  );
-                })}
+              {/* 30s Timer Display */}
+              <div className={`px-6 py-2 rounded-2xl border text-4xl font-black font-mono tracking-tighter ${
+                timerSeconds <= 5 
+                  ? 'bg-rose-950/80 border-rose-500 text-rose-400 animate-pulse' 
+                  : 'bg-slate-950 border-slate-800 text-indigo-400'
+              }`}>
+                {timerSeconds}s
               </div>
             </div>
-          )}
 
-          {/* Phase 2: POUNCE REVIEW (+15 / -10) */}
-          {phase === 'POUNCE_REVIEW' && (
-            <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col gap-6 flex-1">
-              <div>
-                <h2 className="text-xl font-bold tracking-tight text-rose-400">Evaluate Pounce Submissions</h2>
-                <p className="text-slate-400 text-xs mt-1">Mark each pouncing team as Correct (+15) or Incorrect (-10).</p>
-              </div>
-
-              <div className="space-y-3 flex-1">
-                {Object.keys(pounces).map((idStr) => {
-                  const id = Number(idStr);
-                  const team = teams.find((t) => t.id === id);
-                  if (!team) return null;
-                  const currentStatus = pounces[id];
-
-                  return (
-                    <div key={id} className="flex items-center justify-between bg-slate-950 p-4 rounded-xl border border-slate-800">
-                      <span className="font-semibold text-slate-200">{team.name}</span>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => setPounceResult(id, 'correct')}
-                          className={`px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-1.5 border transition ${
-                            currentStatus === 'correct'
-                              ? 'bg-emerald-600 text-white border-emerald-500 shadow-md'
-                              : 'bg-slate-800 border-slate-700 text-emerald-400 hover:bg-slate-700'
-                          }`}
-                        >
-                          <CheckCircle className="w-4 h-4" /> +15 (Correct)
-                        </button>
-                        <button
-                          onClick={() => setPounceResult(id, 'incorrect')}
-                          className={`px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-1.5 border transition ${
-                            currentStatus === 'incorrect'
-                              ? 'bg-rose-600 text-white border-rose-500 shadow-md'
-                              : 'bg-slate-800 border-slate-700 text-rose-400 hover:bg-slate-700'
-                          }`}
-                        >
-                          <XCircle className="w-4 h-4" /> -10 (Incorrect)
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <button
-                onClick={proceedToBounce}
-                className="w-full bg-indigo-600 hover:bg-indigo-500 font-semibold py-3 rounded-xl flex items-center justify-center gap-2 shadow-lg transition"
-              >
-                Apply Pounce Points & Proceed to Bounce <ArrowRight className="w-5 h-5" />
-              </button>
-            </div>
-          )}
-
-          {/* Phase 3: BOUNCE QUEUE (+10 / +5 Split / Pass) */}
-          {phase === 'BOUNCING' && (
-            <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col gap-6 flex-1">
-              <div>
-                <h2 className="text-xl font-bold tracking-tight text-amber-400">Clockwise Bounce Phase</h2>
-                <p className="text-slate-400 text-xs mt-1">
-                  Active turn proceeds clockwisely. All teams that pounced have been excluded automatically.
-                </p>
-              </div>
-
-              {activeBounceTeam ? (
-                <div className="bg-slate-950 border border-amber-500/30 rounded-2xl p-6 flex flex-col items-center justify-center gap-4 text-center">
-                  <span className="text-xs uppercase font-bold tracking-widest text-amber-400/80 bg-amber-500/10 px-3 py-1 rounded-full">
-                    Current Turn
-                  </span>
-                  <div className="text-3xl font-black text-white">{activeBounceTeam.name}</div>
-
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 w-full max-w-md mt-2">
-                    <button
-                      onClick={() => awardBounceFull(activeBounceTeam.id)}
-                      className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-xl shadow-lg transition col-span-2 sm:col-span-1"
-                    >
-                      +10 Correct
-                    </button>
-                    <button
-                      onClick={passBounce}
-                      className="bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold py-3 rounded-xl border border-slate-700 transition"
-                    >
-                      Pass & Bounce
-                    </button>
-                    <button
-                      onClick={() => {
-                        setSplitTeam1(activeBounceTeam.id);
-                      }}
-                      className="bg-purple-600 hover:bg-purple-500 text-white font-bold py-3 rounded-xl transition"
-                    >
-                      Split (+5 / +5)
-                    </button>
-                  </div>
-                </div>
+            {/* Timer Buttons */}
+            <div className="flex gap-3">
+              {phase === 'IDLE' ? (
+                <button
+                  onClick={startQuestion}
+                  className="flex-1 bg-indigo-600 hover:bg-indigo-500 font-bold py-3.5 px-6 rounded-2xl flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/30 transition text-base"
+                >
+                  <Play className="w-5 h-5 fill-current" /> Start 30s Pounce Timer (Space)
+                </button>
               ) : (
-                <div className="bg-slate-950 border border-slate-800 rounded-2xl p-6 text-center text-slate-400">
-                  All eligible teams have passed this question.
-                </div>
+                <>
+                  <button
+                    onClick={toggleTimer}
+                    className="flex-1 bg-slate-800 hover:bg-slate-700 font-bold py-3.5 px-6 rounded-2xl flex items-center justify-center gap-2 border border-slate-700 transition"
+                  >
+                    {isTimerRunning ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
+                    {isTimerRunning ? 'Pause' : 'Resume'}
+                  </button>
+                  <button
+                    onClick={skipToBounce}
+                    className="bg-amber-600 hover:bg-amber-500 text-white font-bold py-3.5 px-8 rounded-2xl flex items-center justify-center gap-2 transition"
+                  >
+                    <FastForward className="w-5 h-5" /> Go to Bounce
+                  </button>
+                </>
               )}
-
-              {/* Point Split Sub-drawer */}
-              {splitTeam1 && (
-                <div className="bg-purple-950/40 border border-purple-500/30 p-4 rounded-xl flex flex-col gap-3">
-                  <span className="text-xs font-bold uppercase text-purple-300">Select 2nd Team for +5 Split</span>
-                  <div className="flex flex-wrap gap-2">
-                    {teams
-                      .filter((t) => t.id !== splitTeam1)
-                      .map((t) => (
-                        <button
-                          key={t.id}
-                          onClick={() => setSplitTeam2(t.id)}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold border ${
-                            splitTeam2 === t.id
-                              ? 'bg-purple-600 border-purple-400 text-white'
-                              : 'bg-slate-900 border-slate-700 text-slate-300 hover:bg-slate-800'
-                          }`}
-                        >
-                          {t.name}
-                        </button>
-                      ))}
-                  </div>
-                  {splitTeam2 && (
-                    <button
-                      onClick={handleSplitAward}
-                      className="bg-purple-600 hover:bg-purple-500 text-white font-bold py-2 rounded-lg text-sm transition self-end px-4"
-                    >
-                      Confirm +5 / +5 Split
-                    </button>
-                  )}
-                </div>
-              )}
-
-              <button
-                onClick={nextQuestion}
-                className="mt-auto bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold py-3 rounded-xl flex items-center justify-center gap-2 border border-slate-700 transition"
-              >
-                No Points / Skip to Next Question <ArrowRight className="w-4 h-4" />
-              </button>
             </div>
-          )}
 
-          {/* Phase 4: QUESTION SUMMARY */}
-          {phase === 'QUESTION_END' && (
-            <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col items-center justify-center gap-4 text-center flex-1">
-              <CheckCircle className="w-12 h-12 text-emerald-400" />
-              <h2 className="text-2xl font-black">Question {questionNumber} Resolved</h2>
-              <p className="text-slate-400 text-sm max-w-sm">
-                Points have been successfully credited. Click below to rotate the direct turn to the next team.
-              </p>
-              <button
-                onClick={nextQuestion}
-                className="bg-indigo-600 hover:bg-indigo-500 font-bold py-3.5 px-8 rounded-xl flex items-center gap-2 shadow-lg shadow-indigo-600/30 transition text-base"
-              >
-                Advance to Next Question <ArrowRight className="w-5 h-5" />
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* Right Col: Real-time Leaderboard & Manual Adjustments */}
-        <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col gap-4">
-          <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-            <div className="flex items-center gap-2 font-bold text-base">
-              <Trophy className="w-4 h-4 text-amber-400" /> Leaderboard
-            </div>
-            <button
-              onClick={triggerWinnerCelebration}
-              className="text-xs text-slate-400 hover:text-amber-400 transition"
-            >
-              🎉 Confetti
-            </button>
-          </div>
-
-          <div className="space-y-2 flex-1 overflow-y-auto">
-            {[...teams]
-              .sort((a, b) => b.score - a.score)
-              .map((team, rank) => {
-                const isEditing = editingTeamId === team.id;
+            {/* Team Grid with In-Card Scores and Editing */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 flex-1">
+              {teams.map((team, idx) => {
+                const isDirect = idx === directTeamIndex;
+                const isPounced = !!pounces[team.id];
 
                 return (
                   <div
                     key={team.id}
-                    className="flex items-center justify-between p-3 rounded-xl bg-slate-950/70 border border-slate-800/80 hover:border-slate-700 transition"
+                    onClick={() => phase === 'POUNCING' && togglePounce(team.id)}
+                    className={`relative p-5 rounded-2xl border flex flex-col justify-between transition-all ${
+                      isPounced
+                        ? 'bg-rose-950/40 border-rose-500 shadow-lg shadow-rose-950'
+                        : 'bg-slate-950 border-slate-800 hover:border-slate-700'
+                    } ${phase === 'POUNCING' ? 'cursor-pointer active:scale-95' : ''}`}
                   >
-                    <div className="flex items-center gap-3">
-                      <span className={`w-6 text-xs font-bold font-mono ${
-                        rank === 0 ? 'text-amber-400' : rank === 1 ? 'text-slate-300' : rank === 2 ? 'text-amber-600' : 'text-slate-600'
-                      }`}>
-                        #{rank + 1}
-                      </span>
+                    {/* Header: Key and Direct Badge */}
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-mono font-bold text-slate-500">[{idx + 1}]</span>
+                      {isDirect && (
+                        <span className="px-2 py-0.5 bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-bold rounded">
+                          DIRECT
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Team Name / Edit */}
+                    <div className="my-2" onClick={(e) => e.stopPropagation()}>
                       <input
                         type="text"
                         value={team.name}
                         onChange={(e) => updateTeamName(team.id, e.target.value)}
-                        className="bg-transparent font-medium text-sm text-slate-200 focus:outline-none focus:border-b border-indigo-500 w-28 sm:w-32"
+                        className="bg-transparent font-bold text-base text-slate-100 focus:outline-none focus:border-b border-indigo-500 w-full"
                       />
                     </div>
 
-                    <div className="flex items-center gap-2">
-                      {isEditing ? (
-                        <div className="flex items-center gap-1">
-                          <input
-                            type="number"
-                            value={tempEditScore}
-                            onChange={(e) => setTempEditScore(e.target.value)}
-                            className="w-14 px-1.5 py-0.5 bg-slate-800 border border-indigo-500 rounded text-center text-sm font-mono"
-                            autoFocus
-                          />
-                          <button
-                            onClick={() => {
-                              const val = parseInt(tempEditScore, 10);
-                              if (!isNaN(val)) manualAdjustScore(team.id, val - team.score);
-                              setEditingTeamId(null);
-                            }}
-                            className="px-2 py-0.5 bg-indigo-600 rounded text-xs"
-                          >
-                            Save
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => {
-                            setEditingTeamId(team.id);
-                            setTempEditScore(team.score.toString());
-                          }}
-                          className={`font-mono font-bold text-base px-2.5 py-0.5 rounded cursor-pointer transition ${
-                            team.score > 0 ? 'text-emerald-400 hover:bg-emerald-500/10' : team.score < 0 ? 'text-rose-400 hover:bg-rose-500/10' : 'text-slate-400 hover:bg-slate-800'
-                          }`}
-                          title="Click to edit score directly"
-                        >
-                          {team.score}
-                        </button>
-                      )}
+                    {/* Points & Pounce Tag */}
+                    <div className="flex items-center justify-between pt-2 border-t border-slate-800/80">
+                      <span className={`text-2xl font-black font-mono ${
+                        team.score > 0 ? 'text-emerald-400' : team.score < 0 ? 'text-rose-400' : 'text-slate-400'
+                      }`}>
+                        {team.score} pts
+                      </span>
+                      <span className={`text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded ${
+                        isPounced ? 'bg-rose-500 text-white' : 'bg-slate-800 text-slate-400'
+                      }`}>
+                        {isPounced ? 'Pounced' : '---'}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
-                      {/* Micro Quick Adjust Buttons */}
+        {/* PHASE 2: BOUNCE (Pounced Teams Greyed Out, Multi-select for Splits) */}
+        {phase === 'BOUNCING' && (
+          <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 shadow-2xl flex-1 flex flex-col gap-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-xs uppercase font-bold tracking-widest text-amber-400">Bounce Turn</span>
+                <h1 className="text-2xl font-black mt-0.5">Select Team(s) for Bounce Points</h1>
+                <p className="text-slate-400 text-xs mt-1">
+                  Pounced teams are greyed out. Select 1 team for +10, or 2–3 teams to split. Pounce results remain hidden.
+                </p>
+              </div>
+
+              {bounceAwardedTeams.length > 0 && (
+                <div className="bg-purple-950/60 border border-purple-500/40 text-purple-300 font-bold px-4 py-2 rounded-xl text-sm">
+                  {getSplitPointsLabel()}
+                </div>
+              )}
+            </div>
+
+            {/* Grid of Teams (Pounced Greyed Out) */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 flex-1">
+              {teams.map((team, idx) => {
+                const isDirect = idx === directTeamIndex;
+                const isPounced = !!pounces[team.id];
+                const isSelectedForBounce = bounceAwardedTeams.includes(team.id);
+
+                return (
+                  <button
+                    key={team.id}
+                    disabled={isPounced}
+                    onClick={() => toggleBounceSelection(team.id)}
+                    className={`relative p-5 rounded-2xl border text-left flex flex-col justify-between transition-all ${
+                      isPounced
+                        ? 'bg-slate-950/40 border-slate-900 text-slate-600 opacity-40 cursor-not-allowed'
+                        : isSelectedForBounce
+                        ? 'bg-purple-600/30 border-purple-500 text-white ring-2 ring-purple-500/50 shadow-lg'
+                        : 'bg-slate-950 border-slate-800 hover:border-slate-600 text-slate-200 cursor-pointer'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-mono font-bold text-slate-500">[{idx + 1}]</span>
+                      {isDirect && (
+                        <span className="px-2 py-0.5 bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-bold rounded">
+                          DIRECT
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="font-bold text-base my-2">{team.name}</div>
+
+                    <div className="flex items-center justify-between pt-2 border-t border-slate-800/80">
+                      <span className="text-xl font-mono font-black">{team.score} pts</span>
+                      <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded ${
+                        isPounced
+                          ? 'bg-slate-800 text-slate-500'
+                          : isSelectedForBounce
+                          ? 'bg-purple-500 text-white'
+                          : 'bg-slate-800 text-slate-400'
+                      }`}>
+                        {isPounced ? 'Pounced' : isSelectedForBounce ? 'Selected' : 'Eligible'}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Confirm Bounce & Move to Pounce Evaluation */}
+            <div className="flex gap-3">
+              <button
+                onClick={confirmBounceAndReviewPounce}
+                className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3.5 px-6 rounded-2xl flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20 transition"
+              >
+                {bounceAwardedTeams.length === 0
+                  ? 'Pass All (0 Bounce pts) & Reveal Pounces'
+                  : `Award Bounce (${getSplitPointsLabel()}) & Reveal Pounces`}
+                <ArrowRight className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* PHASE 3: POUNCE EVALUATION (Post-Bounce Secret Reveal) */}
+        {phase === 'POUNCE_REVIEW' && (
+          <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 shadow-2xl flex-1 flex flex-col gap-6">
+            <div>
+              <span className="text-xs uppercase font-bold tracking-widest text-rose-400">Post-Bounce Reveal</span>
+              <h1 className="text-2xl font-black mt-0.5">Evaluate Hidden Pounce Submissions</h1>
+              <p className="text-slate-400 text-xs mt-1">Bounce round has ended. Now grade the pounce slips submitted earlier.</p>
+            </div>
+
+            <div className="space-y-3 flex-1 overflow-y-auto">
+              {Object.keys(pounces).map((idStr) => {
+                const id = Number(idStr);
+                const team = teams.find((t) => t.id === id);
+                if (!team) return null;
+                const status = pounces[id];
+
+                return (
+                  <div key={id} className="flex items-center justify-between bg-slate-950 p-4 rounded-2xl border border-slate-800">
+                    <div>
+                      <div className="font-bold text-slate-100 text-lg">{team.name}</div>
+                      <span className="text-xs text-slate-500">Current Score: {team.score} pts</span>
+                    </div>
+
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setPounceResult(id, 'correct')}
+                        className={`px-5 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2 border transition ${
+                          status === 'correct'
+                            ? 'bg-emerald-600 text-white border-emerald-500 shadow-md'
+                            : 'bg-slate-900 border-slate-700 text-emerald-400 hover:bg-slate-800'
+                        }`}
+                      >
+                        <CheckCircle className="w-4 h-4" /> +15 (Correct)
+                      </button>
+                      <button
+                        onClick={() => setPounceResult(id, 'incorrect')}
+                        className={`px-5 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2 border transition ${
+                          status === 'incorrect'
+                            ? 'bg-rose-600 text-white border-rose-500 shadow-md'
+                            : 'bg-slate-900 border-slate-700 text-rose-400 hover:bg-slate-800'
+                        }`}
+                      >
+                        <XCircle className="w-4 h-4" /> -10 (Incorrect)
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <button
+              onClick={finalizeQuestion}
+              className="w-full bg-indigo-600 hover:bg-indigo-500 font-bold py-3.5 rounded-2xl flex items-center justify-center gap-2 shadow-lg transition"
+            >
+              Apply Pounce Scores & Complete Question <ArrowRight className="w-5 h-5" />
+            </button>
+          </div>
+        )}
+
+        {/* PHASE 4: QUESTION END */}
+        {phase === 'QUESTION_END' && (
+          <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-8 shadow-2xl flex flex-col items-center justify-center gap-4 text-center flex-1">
+            <CheckCircle className="w-14 h-14 text-emerald-400" />
+            <h2 className="text-3xl font-black">Question {questionNumber} Completed</h2>
+            <p className="text-slate-400 text-sm max-w-sm">
+              All pounce and bounce points have been logged into the scores. Ready to advance the clockwise direct turn.
+            </p>
+            <button
+              onClick={nextQuestion}
+              className="bg-indigo-600 hover:bg-indigo-500 font-bold py-4 px-10 rounded-2xl flex items-center gap-2 shadow-lg shadow-indigo-600/30 transition text-base mt-2"
+            >
+              Next Question <ArrowRight className="w-5 h-5" />
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* RIGHT SIDEBAR: Unified Settings, Direct Info & Collapsible Leaderboard */}
+      <div className="w-80 flex flex-col gap-4">
+        
+        {/* Settings & Info Card */}
+        <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-5 shadow-xl space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-800/80 pb-3">
+            <div>
+              <span className="text-[11px] font-bold uppercase tracking-wider text-indigo-400 block">Round Control</span>
+              <div className="text-lg font-black text-white">Q{questionNumber} Direct: <span className="text-amber-400">{teams[directTeamIndex]?.name}</span></div>
+            </div>
+            <button
+              onClick={resetQuiz}
+              className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition"
+              title="Reset Quiz"
+            >
+              <RotateCcw className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* Teams count */}
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-400">Total Teams</span>
+            <div className="flex bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs">
+              {[8, 9, 10].map((cnt) => (
+                <button
+                  key={cnt}
+                  onClick={() => setTeamCount(cnt)}
+                  className={`px-2.5 py-1 rounded-lg font-bold transition ${
+                    teams.length === cnt ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  {cnt}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Special Round & Projector Actions */}
+          <div className="grid grid-cols-2 gap-2 pt-1">
+            <button
+              onClick={() => setIsSpecialRoundOpen(true)}
+              className="flex items-center justify-center gap-1.5 bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/30 py-2 rounded-xl text-xs font-bold transition"
+            >
+              <Sparkles className="w-3.5 h-3.5" /> Special Round
+            </button>
+            <button
+              onClick={() => window.open(`${window.location.origin}?display=projector`, '_blank', 'width=1280,height=720')}
+              className="flex items-center justify-center gap-1.5 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 py-2 rounded-xl text-xs font-bold transition"
+            >
+              <ExternalLink className="w-3.5 h-3.5" /> Projector
+            </button>
+          </div>
+        </div>
+
+        {/* Collapsible Leaderboard Card */}
+        <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-5 shadow-xl flex-1 flex flex-col">
+          <div 
+            onClick={() => setShowLeaderboard(!showLeaderboard)}
+            className="flex items-center justify-between cursor-pointer border-b border-slate-800/80 pb-3"
+          >
+            <div className="flex items-center gap-2 font-bold text-sm text-slate-200">
+              <Trophy className="w-4 h-4 text-amber-400" /> Leaderboard
+            </div>
+            {showLeaderboard ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
+          </div>
+
+          {showLeaderboard && (
+            <div className="space-y-2 mt-3 flex-1 overflow-y-auto max-h-[480px]">
+              {[...teams]
+                .sort((a, b) => b.score - a.score)
+                .map((team, rank) => (
+                  <div
+                    key={team.id}
+                    className="flex items-center justify-between p-3 rounded-2xl bg-slate-950 border border-slate-800/80 text-xs"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <span className={`font-mono font-bold ${
+                        rank === 0 ? 'text-amber-400' : rank === 1 ? 'text-slate-300' : rank === 2 ? 'text-amber-600' : 'text-slate-600'
+                      }`}>
+                        #{rank + 1}
+                      </span>
+                      <span className="font-bold text-slate-200 truncate w-24">{team.name}</span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <span className={`font-mono font-black text-sm ${
+                        team.score > 0 ? 'text-emerald-400' : team.score < 0 ? 'text-rose-400' : 'text-slate-400'
+                      }`}>
+                        {team.score}
+                      </span>
                       <div className="flex flex-col gap-0.5">
                         <button
                           onClick={() => manualAdjustScore(team.id, 5)}
                           className="p-0.5 text-slate-500 hover:text-emerald-400 hover:bg-slate-800 rounded"
                           title="+5 Manual"
                         >
-                          <Plus className="w-3 h-3" />
+                          <Plus className="w-2.5 h-2.5" />
                         </button>
                         <button
                           onClick={() => manualAdjustScore(team.id, -5)}
                           className="p-0.5 text-slate-500 hover:text-rose-400 hover:bg-slate-800 rounded"
                           title="-5 Manual"
                         >
-                          <Minus className="w-3 h-3" />
+                          <Minus className="w-2.5 h-2.5" />
                         </button>
                       </div>
                     </div>
                   </div>
-                );
-              })}
-          </div>
+                ))}
+            </div>
+          )}
         </div>
-      </main>
+      </div>
 
       {/* Special Round Drawer / Modal */}
       {isSpecialRoundOpen && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 w-full max-w-lg rounded-2xl p-6 shadow-2xl space-y-4">
+          <div className="bg-slate-900 border border-slate-800 w-full max-w-lg rounded-3xl p-6 shadow-2xl space-y-4">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <div className="flex items-center gap-2">
                 <Sparkles className="w-5 h-5 text-purple-400" />
@@ -533,7 +491,7 @@ export default function App() {
             </div>
 
             <p className="text-slate-400 text-xs">
-              Directly input points to be added (+) or deducted (-) for each team for this special round without advancing question rounds.
+              Add (+) or deduct (-) arbitrary score totals per team without changing the direct question sequence.
             </p>
 
             <div className="grid grid-cols-2 gap-3 max-h-60 overflow-y-auto pr-1">
