@@ -351,7 +351,6 @@ export const useQuizStore = create<QuizStore>()(
             }));
           } else {
             commit('QUESTION_FINALIZED', `Completed ${state.roundName} Q${state.questionNumber}`, (current) => ({
-              teams,
               ...finalizeCurrentQuestion({ ...current, teams }),
               isTimerRunning: false,
             }));
