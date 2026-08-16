@@ -1,40 +1,45 @@
 # ⚡ Quiz Scorer (Pounce & Bounce Controller)
 
-A streamlined, high-speed live scoring engine designed for quizmasters running standard **Pounce & Bounce** quiz formats (8–10 teams).
+A keyboard-first, offline-capable live scoring application designed for Quizmasters running high-speed **Pounce & Bounce** quiz formats (8–10 teams).
 
 ---
 
 ## 🎯 Key Features
 
-* **30-Second Pounce Window:** Single-click (or hotkey) tagging of pounce slips during a countdown timer.
-* **Clockwise Bounce Engine:** Teams that pounced are automatically greyed out and locked from the bounce queue.
-* **Flexible Point Splitting:** Award full points (+10) to a single team, or select 2–3 teams to split bounce points (+5 / +3.3 pts) automatically.
-* **Blind Pounce Scoring:** Pounce submissions remain hidden until after the bounce round concludes. Grading (+15 / -10) occurs post-bounce to keep gameplay fair.
-* **Real-Time In-Card Editing:** Rename teams and view points directly inside team tiles on the main stage.
-* **Special Round Batch Scorer:** Dedicated drawer to inject arbitrary positive or negative point adjustments per team without disrupting question rotation.
-* **Question History Log:** Complete retrospective log tracking direct teams, bounce awards, and individual pounce slip results per question.
-* **Dual-Screen Projector Display:** Audience scoreboard route (`?display=projector`) synced via the browser's native `BroadcastChannel` API with zero external server dependencies.
-* **Local Persistence:** Quiz state automatically syncs to `localStorage` to safeguard against accidental page reloads.
+* **Snake-Pattern Seating Grid:** Displays teams in a natural room-loop layout (Teams 1–4 on top left-to-right, Teams 5–8 underneath right-to-left) with simple, clean `[1]`, `[2]` badges.
+* **Round 1 vs. Round 2 Direction Engine:**
+  * **Round 1:** Starts at **Q1**, begins with **Team 1**, and rotates direct turns **Clockwise** ($1 \rightarrow 2 \rightarrow \dots \rightarrow 8$).
+  * **Round 2:** Starts at **Q1**, begins with the **Last Team**, and rotates direct turns **Anti-Clockwise** ($8 \rightarrow 7 \rightarrow \dots \rightarrow 1$).
+* **30-Second Pounce Window:** Single-key tagging of secret pounce slips during an active countdown timer.
+* **Blind Grading (Post-Bounce Reveal):** Pounce scores ($+15$ / $-10$) remain secret until the bounce phase concludes.
+* **In-Place Editable Bounce Splits:** Select 1 team ($+10$) or 2–3 teams to split points, with direct inline inputs to customize exact points per team (e.g., $+7$ / $+3$).
+* **Special Round Logging:** Dedicated drawer to batch-award custom points with custom titles logged directly to the scoring ledger.
+* **History Log & CSV Export:** Complete question-by-question ledger recording direct turns, bounce splits, pounce slips, and special rounds with one-click **CSV Download**.
+* **Dual-Screen Projector Sync:** Real-time audience display (`?display=projector`) synced via the browser's native `BroadcastChannel` API without external servers.
+* **Local Persistence:** Quiz state automatically syncs to `localStorage` to survive accidental browser reloads.
 
 ---
 
 ## 🕹️ Scoring Rules
 
-| Action | Points | Behavior |
+| Action | Points | Workflow & Rules |
 | :--- | :--- | :--- |
-| **Pounce (Correct)** | `+15` | Secretly submitted during the 30s window, graded post-bounce |
-| **Pounce (Incorrect)**| `-10` | Secretly submitted during the 30s window, graded post-bounce |
+| **Pounce (Correct)** | `+15` | Logged during 30s timer; evaluated post-bounce |
+| **Pounce (Incorrect)** | `-10` | Logged during 30s timer; evaluated post-bounce |
 | **Bounce (Solo)** | `+10` | Awarded to 1 eligible non-pouncing team |
-| **Bounce (Split)** | `+5` / `+3.3` | Split evenly when selecting 2 or 3 teams |
-| **Bounce (Pass)** | `0` | Advances turn clockwisely or ends bounce |
-| **Special Round** | `+/- X` | Custom point adjustments committed in batch |
+| **Bounce (Split)** | `+5` / `+3.3` (Editable) | Split across 2–3 teams; exact point values can be edited manually |
+| **Bounce (Pass)** | `0` | Pass all bounce turns with zero points |
+| **Special Round** | `+/- X` | Custom batch point additions/deductions committed with round titles |
 
 ---
 
-## ⌨️ Keyboard Shortcuts
+## ⌨️ Complete Keyboard Workflow
 
-* **`Spacebar`**: Start 30-second timer / Pause & Resume
-* **`1` – `8` (or `0`)**: Instantly toggle Pounce submission for Team 1 through 8/10
+| Key | Pounce Phase | Bounce Phase | Post-Bounce Pounce Review | Question End |
+| :--- | :--- | :--- | :--- | :--- |
+| **`Spacebar`** | Start / Pause / Resume Timer | — | — | — |
+| **`1` – `8` (or `0`)** | Toggle Pounce Slip | Select / Deselect Team | Toggle Grade (`+15` $\leftrightarrow$ `-10`) | — |
+| **`Enter`** | Skip to Bounce | Confirm Bounce & Reveal | Commit Pounce Scores | Advance to Next Question |
 
 ---
 
@@ -44,13 +49,10 @@ A streamlined, high-speed live scoring engine designed for quizmasters running s
 * Node.js (v18+)
 * npm
 
-### Installation
+### Installation & Run
 ```bash
-# Clone the repository and navigate into the folder
-cd quiz-scorer
-
 # Install dependencies
 npm install
 
-# Start the local development server
+# Start development server
 npm run dev
