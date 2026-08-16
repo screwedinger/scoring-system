@@ -261,12 +261,13 @@ export const useQuizStore = create<QuizStore>()(
 
         Object.entries(pounces).forEach(([idStr, status]) => {
           const id = Number(idStr);
-          const delta = status === 'correct' ? 15 : -10;
+          const finalStatus = status === 'incorrect' ? 'incorrect' : 'correct';
+        const delta = finalStatus === 'correct' ? 15 : -10;
           const targetTeam = teams.find((t) => t.id === id);
           if (targetTeam) {
             pounceDetails.push({
               teamName: targetTeam.name,
-              status,
+              status: finalStatus,
               points: delta,
             });
           }
