@@ -1,75 +1,56 @@
-# React + TypeScript + Vite
+# ⚡ Quiz Scorer (Pounce & Bounce Controller)
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A streamlined, high-speed live scoring engine designed for quizmasters running standard **Pounce & Bounce** quiz formats (8–10 teams).
 
-Currently, two official plugins are available:
+---
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## 🎯 Key Features
 
-## React Compiler
+* **30-Second Pounce Window:** Single-click (or hotkey) tagging of pounce slips during a countdown timer.
+* **Clockwise Bounce Engine:** Teams that pounced are automatically greyed out and locked from the bounce queue.
+* **Flexible Point Splitting:** Award full points (+10) to a single team, or select 2–3 teams to split bounce points (+5 / +3.3 pts) automatically.
+* **Blind Pounce Scoring:** Pounce submissions remain hidden until after the bounce round concludes. Grading (+15 / -10) occurs post-bounce to keep gameplay fair.
+* **Real-Time In-Card Editing:** Rename teams and view points directly inside team tiles on the main stage.
+* **Special Round Batch Scorer:** Dedicated drawer to inject arbitrary positive or negative point adjustments per team without disrupting question rotation.
+* **Question History Log:** Complete retrospective log tracking direct teams, bounce awards, and individual pounce slip results per question.
+* **Dual-Screen Projector Display:** Audience scoreboard route (`?display=projector`) synced via the browser's native `BroadcastChannel` API with zero external server dependencies.
+* **Local Persistence:** Quiz state automatically syncs to `localStorage` to safeguard against accidental page reloads.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+---
 
-## Expanding the ESLint configuration
+## 🕹️ Scoring Rules
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+| Action | Points | Behavior |
+| :--- | :--- | :--- |
+| **Pounce (Correct)** | `+15` | Secretly submitted during the 30s window, graded post-bounce |
+| **Pounce (Incorrect)**| `-10` | Secretly submitted during the 30s window, graded post-bounce |
+| **Bounce (Solo)** | `+10` | Awarded to 1 eligible non-pouncing team |
+| **Bounce (Split)** | `+5` / `+3.3` | Split evenly when selecting 2 or 3 teams |
+| **Bounce (Pass)** | `0` | Advances turn clockwisely or ends bounce |
+| **Special Round** | `+/- X` | Custom point adjustments committed in batch |
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+---
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+## ⌨️ Keyboard Shortcuts
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+* **`Spacebar`**: Start 30-second timer / Pause & Resume
+* **`1` – `8` (or `0`)**: Instantly toggle Pounce submission for Team 1 through 8/10
 
-```
+---
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## 🚀 Getting Started
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+### Prerequisites
+* Node.js (v18+)
+* npm
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+### Installation
+```bash
+# Clone the repository and navigate into the folder
+cd quiz-scorer
 
-```
+# Install dependencies
+npm install
+
+# Start the local development server
+npm run dev
