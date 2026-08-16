@@ -2,7 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { useQuizStore } from './store';
 import { 
   Play, Pause, FastForward, RotateCcw, ArrowRight, 
-  CheckCircle, XCircle, Plus, Minus, Trophy, Sparkles, ChevronDown, ChevronUp, Edit2, ExternalLink
+  CheckCircle, XCircle, Plus, Minus, Trophy, Sparkles, 
+  Menu, X, History, ExternalLink
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -16,6 +17,7 @@ export default function App() {
     isTimerRunning,
     pounces,
     bounceAwardedTeams,
+    historyLog,
     setTeamCount,
     updateTeamName,
     manualAdjustScore,
@@ -33,11 +35,11 @@ export default function App() {
     resetQuiz
   } = useQuizStore();
 
-  // Local UI State
-  const [showLeaderboard, setShowLeaderboard] = useState(true);
+  // Drawers & Modals State
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isSpecialRoundOpen, setIsSpecialRoundOpen] = useState(false);
   const [specialScores, setSpecialScores] = useState<Record<number, number>>({});
-  const [editingTeamId, setEditingTeamId] = useState<number | null>(null);
 
   // Timer Tick
   useEffect(() => {
@@ -90,19 +92,51 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex p-6 gap-6 font-sans select-none">
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans select-none overflow-x-hidden">
       
-      {/* LEFT / CENTER: Dynamic Main Quiz Area */}
-      <div className="flex-1 flex flex-col gap-6">
+      {/* Floating Minimal Header with Menu Button */}
+      <header className="flex items-center justify-between px-6 py-4 z-20">
+        <div className="flex items-center gap-3">
+          <span className="text-xs uppercase font-extrabold tracking-widest bg-indigo-950/80 border border-indigo-500/30 text-indigo-400 px-3 py-1.5 rounded-xl">
+            Q{questionNumber}
+          </span>
+          <span className="text-xs font-semibold text-slate-400">
+            Direct: <strong className="text-amber-400 font-bold">{teams[directTeamIndex]?.name}</strong>
+          </span>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setIsHistoryOpen(true)}
+            className="flex items-center gap-1.5 bg-slate-900/80 hover:bg-slate-800 text-slate-300 border border-slate-800 px-3.5 py-2 rounded-xl text-xs font-bold transition shadow-sm"
+          >
+            <History className="w-4 h-4 text-indigo-400" /> History
+          </button>
+          <button
+            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+            className={`p-2 rounded-xl border transition ${
+              isSidebarOpen 
+                ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg' 
+                : 'bg-slate-900/80 border-slate-800 text-slate-300 hover:bg-slate-800'
+            }`}
+            title="Toggle Menu & Leaderboard"
+          >
+            {isSidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+          </button>
+        </div>
+      </header>
+
+      {/* Center Main Stage (Ultra clean: Only 8 teams & Timer) */}
+      <main className="flex-1 flex flex-col p-6 max-w-7xl mx-auto w-full gap-6">
         
         {/* PHASE 1: IDLE / POUNCING */}
         {(phase === 'IDLE' || phase === 'POUNCING') && (
-          <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 shadow-2xl flex-1 flex flex-col gap-6">
+          <div className="bg-slate-900/70 border border-slate-800/80 rounded-3xl p-6 md:p-8 shadow-2xl flex-1 flex flex-col gap-6 backdrop-blur">
             <div className="flex items-center justify-between">
               <div>
                 <span className="text-xs uppercase font-bold tracking-widest text-indigo-400">Pounce Window</span>
-                <h1 className="text-2xl font-black mt-0.5">
-                  {phase === 'IDLE' ? 'Ready to Start Question' : '⚡ 30s Pounce Timer Running'}
+                <h1 className="text-2xl md:text-3xl font-black mt-0.5">
+                  {phase === 'IDLE' ? 'Ready for Question' : '⚡ 30s Pounce Timer Running'}
                 </h1>
               </div>
 
@@ -116,7 +150,7 @@ export default function App() {
               </div>
             </div>
 
-            {/* Timer Buttons */}
+            {/* Quick Timer Controls */}
             <div className="flex gap-3">
               {phase === 'IDLE' ? (
                 <button
@@ -144,7 +178,7 @@ export default function App() {
               )}
             </div>
 
-            {/* Team Grid with In-Card Scores and Editing */}
+            {/* 8-10 Teams Grid */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 flex-1">
               {teams.map((team, idx) => {
                 const isDirect = idx === directTeamIndex;
@@ -156,11 +190,10 @@ export default function App() {
                     onClick={() => phase === 'POUNCING' && togglePounce(team.id)}
                     className={`relative p-5 rounded-2xl border flex flex-col justify-between transition-all ${
                       isPounced
-                        ? 'bg-rose-950/40 border-rose-500 shadow-lg shadow-rose-950'
-                        : 'bg-slate-950 border-slate-800 hover:border-slate-700'
+                        ? 'bg-rose-950/40 border-rose-500 shadow-lg shadow-rose-950 ring-1 ring-rose-500/50'
+                        : 'bg-slate-950/80 border-slate-800 hover:border-slate-700'
                     } ${phase === 'POUNCING' ? 'cursor-pointer active:scale-95' : ''}`}
                   >
-                    {/* Header: Key and Direct Badge */}
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-mono font-bold text-slate-500">[{idx + 1}]</span>
                       {isDirect && (
@@ -170,7 +203,6 @@ export default function App() {
                       )}
                     </div>
 
-                    {/* Team Name / Edit */}
                     <div className="my-2" onClick={(e) => e.stopPropagation()}>
                       <input
                         type="text"
@@ -180,7 +212,6 @@ export default function App() {
                       />
                     </div>
 
-                    {/* Points & Pounce Tag */}
                     <div className="flex items-center justify-between pt-2 border-t border-slate-800/80">
                       <span className={`text-2xl font-black font-mono ${
                         team.score > 0 ? 'text-emerald-400' : team.score < 0 ? 'text-rose-400' : 'text-slate-400'
@@ -200,13 +231,13 @@ export default function App() {
           </div>
         )}
 
-        {/* PHASE 2: BOUNCE (Pounced Teams Greyed Out, Multi-select for Splits) */}
+        {/* PHASE 2: BOUNCE */}
         {phase === 'BOUNCING' && (
-          <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 shadow-2xl flex-1 flex flex-col gap-6">
+          <div className="bg-slate-900/70 border border-slate-800/80 rounded-3xl p-6 md:p-8 shadow-2xl flex-1 flex flex-col gap-6 backdrop-blur">
             <div className="flex items-center justify-between">
               <div>
                 <span className="text-xs uppercase font-bold tracking-widest text-amber-400">Bounce Turn</span>
-                <h1 className="text-2xl font-black mt-0.5">Select Team(s) for Bounce Points</h1>
+                <h1 className="text-2xl md:text-3xl font-black mt-0.5">Select Team(s) for Bounce Points</h1>
                 <p className="text-slate-400 text-xs mt-1">
                   Pounced teams are greyed out. Select 1 team for +10, or 2–3 teams to split. Pounce results remain hidden.
                 </p>
@@ -219,7 +250,6 @@ export default function App() {
               )}
             </div>
 
-            {/* Grid of Teams (Pounced Greyed Out) */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 flex-1">
               {teams.map((team, idx) => {
                 const isDirect = idx === directTeamIndex;
@@ -236,7 +266,7 @@ export default function App() {
                         ? 'bg-slate-950/40 border-slate-900 text-slate-600 opacity-40 cursor-not-allowed'
                         : isSelectedForBounce
                         ? 'bg-purple-600/30 border-purple-500 text-white ring-2 ring-purple-500/50 shadow-lg'
-                        : 'bg-slate-950 border-slate-800 hover:border-slate-600 text-slate-200 cursor-pointer'
+                        : 'bg-slate-950/80 border-slate-800 hover:border-slate-600 text-slate-200 cursor-pointer'
                     }`}
                   >
                     <div className="flex items-center justify-between">
@@ -267,27 +297,24 @@ export default function App() {
               })}
             </div>
 
-            {/* Confirm Bounce & Move to Pounce Evaluation */}
-            <div className="flex gap-3">
-              <button
-                onClick={confirmBounceAndReviewPounce}
-                className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3.5 px-6 rounded-2xl flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20 transition"
-              >
-                {bounceAwardedTeams.length === 0
-                  ? 'Pass All (0 Bounce pts) & Reveal Pounces'
-                  : `Award Bounce (${getSplitPointsLabel()}) & Reveal Pounces`}
-                <ArrowRight className="w-5 h-5" />
-              </button>
-            </div>
+            <button
+              onClick={confirmBounceAndReviewPounce}
+              className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3.5 px-6 rounded-2xl flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20 transition text-base"
+            >
+              {bounceAwardedTeams.length === 0
+                ? 'Pass All (0 Bounce pts) & Reveal Pounces'
+                : `Award Bounce (${getSplitPointsLabel()}) & Reveal Pounces`}
+              <ArrowRight className="w-5 h-5" />
+            </button>
           </div>
         )}
 
-        {/* PHASE 3: POUNCE EVALUATION (Post-Bounce Secret Reveal) */}
+        {/* PHASE 3: POUNCE REVIEW */}
         {phase === 'POUNCE_REVIEW' && (
-          <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 shadow-2xl flex-1 flex flex-col gap-6">
+          <div className="bg-slate-900/70 border border-slate-800/80 rounded-3xl p-6 md:p-8 shadow-2xl flex-1 flex flex-col gap-6 backdrop-blur">
             <div>
               <span className="text-xs uppercase font-bold tracking-widest text-rose-400">Post-Bounce Reveal</span>
-              <h1 className="text-2xl font-black mt-0.5">Evaluate Hidden Pounce Submissions</h1>
+              <h1 className="text-2xl md:text-3xl font-black mt-0.5">Evaluate Hidden Pounce Submissions</h1>
               <p className="text-slate-400 text-xs mt-1">Bounce round has ended. Now grade the pounce slips submitted earlier.</p>
             </div>
 
@@ -343,11 +370,11 @@ export default function App() {
 
         {/* PHASE 4: QUESTION END */}
         {phase === 'QUESTION_END' && (
-          <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-8 shadow-2xl flex flex-col items-center justify-center gap-4 text-center flex-1">
+          <div className="bg-slate-900/70 border border-slate-800/80 rounded-3xl p-8 shadow-2xl flex flex-col items-center justify-center gap-4 text-center flex-1 backdrop-blur">
             <CheckCircle className="w-14 h-14 text-emerald-400" />
             <h2 className="text-3xl font-black">Question {questionNumber} Completed</h2>
             <p className="text-slate-400 text-sm max-w-sm">
-              All pounce and bounce points have been logged into the scores. Ready to advance the clockwise direct turn.
+              Scores have been committed and logged to history. Click below to rotate the direct turn to the next team.
             </p>
             <button
               onClick={nextQuestion}
@@ -357,82 +384,75 @@ export default function App() {
             </button>
           </div>
         )}
-      </div>
+      </main>
 
-      {/* RIGHT SIDEBAR: Unified Settings, Direct Info & Collapsible Leaderboard */}
-      <div className="w-80 flex flex-col gap-4">
-        
-        {/* Settings & Info Card */}
-        <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-5 shadow-xl space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-800/80 pb-3">
-            <div>
-              <span className="text-[11px] font-bold uppercase tracking-wider text-indigo-400 block">Round Control</span>
-              <div className="text-lg font-black text-white">Q{questionNumber} Direct: <span className="text-amber-400">{teams[directTeamIndex]?.name}</span></div>
-            </div>
-            <button
-              onClick={resetQuiz}
-              className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition"
-              title="Reset Quiz"
-            >
-              <RotateCcw className="w-4 h-4" />
-            </button>
-          </div>
-
-          {/* Teams count */}
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-400">Total Teams</span>
-            <div className="flex bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs">
-              {[8, 9, 10].map((cnt) => (
-                <button
-                  key={cnt}
-                  onClick={() => setTeamCount(cnt)}
-                  className={`px-2.5 py-1 rounded-lg font-bold transition ${
-                    teams.length === cnt ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  {cnt}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Special Round & Projector Actions */}
-          <div className="grid grid-cols-2 gap-2 pt-1">
-            <button
-              onClick={() => setIsSpecialRoundOpen(true)}
-              className="flex items-center justify-center gap-1.5 bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/30 py-2 rounded-xl text-xs font-bold transition"
-            >
-              <Sparkles className="w-3.5 h-3.5" /> Special Round
-            </button>
-            <button
-              onClick={() => window.open(`${window.location.origin}?display=projector`, '_blank', 'width=1280,height=720')}
-              className="flex items-center justify-center gap-1.5 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 py-2 rounded-xl text-xs font-bold transition"
-            >
-              <ExternalLink className="w-3.5 h-3.5" /> Projector
-            </button>
-          </div>
-        </div>
-
-        {/* Collapsible Leaderboard Card */}
-        <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-5 shadow-xl flex-1 flex flex-col">
+      {/* Slide-over Right Panel (Settings & Leaderboard) */}
+      {isSidebarOpen && (
+        <div className="fixed inset-0 z-40 flex justify-end">
           <div 
-            onClick={() => setShowLeaderboard(!showLeaderboard)}
-            className="flex items-center justify-between cursor-pointer border-b border-slate-800/80 pb-3"
-          >
-            <div className="flex items-center gap-2 font-bold text-sm text-slate-200">
-              <Trophy className="w-4 h-4 text-amber-400" /> Leaderboard
-            </div>
-            {showLeaderboard ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
-          </div>
+            className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm"
+            onClick={() => setIsSidebarOpen(false)}
+          />
 
-          {showLeaderboard && (
-            <div className="space-y-2 mt-3 flex-1 overflow-y-auto max-h-[480px]">
+          <div className="relative w-full max-w-sm bg-slate-900 border-l border-slate-800 h-full p-6 shadow-2xl flex flex-col gap-5 z-50 overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+              <div className="flex items-center gap-2 font-black text-lg">
+                <Trophy className="w-5 h-5 text-amber-400" /> Controls & Standings
+              </div>
+              <button
+                onClick={() => setIsSidebarOpen(false)}
+                className="p-1.5 text-slate-400 hover:text-white rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Total Teams Settings */}
+            <div className="flex items-center justify-between bg-slate-950 p-3 rounded-2xl border border-slate-800">
+              <span className="text-xs font-semibold text-slate-400">Total Teams</span>
+              <div className="flex bg-slate-900 p-1 rounded-xl border border-slate-800 text-xs">
+                {[8, 9, 10].map((cnt) => (
+                  <button
+                    key={cnt}
+                    onClick={() => setTeamCount(cnt)}
+                    className={`px-2.5 py-1 rounded-lg font-bold transition ${
+                      teams.length === cnt ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    {cnt}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Quick Actions */}
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => {
+                  setIsSidebarOpen(false);
+                  setIsSpecialRoundOpen(true);
+                }}
+                className="flex items-center justify-center gap-1.5 bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/30 py-2.5 rounded-xl text-xs font-bold transition"
+              >
+                <Sparkles className="w-3.5 h-3.5" /> Special Round
+              </button>
+              <button
+                onClick={() => window.open(`${window.location.origin}?display=projector`, '_blank', 'width=1280,height=720')}
+                className="flex items-center justify-center gap-1.5 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 py-2.5 rounded-xl text-xs font-bold transition"
+              >
+                <ExternalLink className="w-3.5 h-3.5" /> Projector
+              </button>
+            </div>
+
+            {/* Leaderboard Table with Micro +/- manual overrides */}
+            <div className="flex-1 space-y-2">
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-400 block mb-2">Live Standings</span>
               {[...teams]
                 .sort((a, b) => b.score - a.score)
                 .map((team, rank) => (
                   <div
                     key={team.id}
-                    className="flex items-center justify-between p-3 rounded-2xl bg-slate-950 border border-slate-800/80 text-xs"
+                    className="flex items-center justify-between p-3 rounded-xl bg-slate-950 border border-slate-800 text-xs"
                   >
                     <div className="flex items-center gap-2.5">
                       <span className={`font-mono font-bold ${
@@ -440,7 +460,7 @@ export default function App() {
                       }`}>
                         #{rank + 1}
                       </span>
-                      <span className="font-bold text-slate-200 truncate w-24">{team.name}</span>
+                      <span className="font-bold text-slate-200 truncate w-28">{team.name}</span>
                     </div>
 
                     <div className="flex items-center gap-2">
@@ -469,11 +489,90 @@ export default function App() {
                   </div>
                 ))}
             </div>
-          )}
-        </div>
-      </div>
 
-      {/* Special Round Drawer / Modal */}
+            <button
+              onClick={resetQuiz}
+              className="w-full flex items-center justify-center gap-2 bg-rose-600/10 hover:bg-rose-600/20 text-rose-400 border border-rose-500/20 py-2.5 rounded-xl text-xs font-bold transition mt-auto"
+            >
+              <RotateCcw className="w-3.5 h-3.5" /> Reset Complete Quiz
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* History Log Modal */}
+      {isHistoryOpen && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 w-full max-w-2xl rounded-3xl p-6 shadow-2xl space-y-4 max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <History className="w-5 h-5 text-indigo-400" />
+                <h3 className="font-bold text-lg">Question Scoring History</h3>
+              </div>
+              <button
+                onClick={() => setIsHistoryOpen(false)}
+                className="text-slate-500 hover:text-slate-300 text-sm"
+              >
+                Close
+              </button>
+            </div>
+
+            {historyLog.length === 0 ? (
+              <div className="text-center text-slate-500 py-12 text-sm">
+                No past questions scored yet. Completed question rounds will show up here.
+              </div>
+            ) : (
+              <div className="space-y-3 overflow-y-auto flex-1 pr-1">
+                {historyLog.map((log, index) => (
+                  <div key={index} className="bg-slate-950 border border-slate-800/80 p-4 rounded-2xl flex flex-col gap-2">
+                    <div className="flex items-center justify-between border-b border-slate-900 pb-2">
+                      <span className="font-bold text-indigo-400 text-sm">Question {log.questionNumber}</span>
+                      <span className="text-slate-500 text-xs">Direct: <strong className="text-slate-300">{log.directTeamName}</strong> • {log.timestamp}</span>
+                    </div>
+
+                    {/* Bounce outcome */}
+                    <div className="text-xs">
+                      <span className="text-slate-400 font-semibold">Bounce Award: </span>
+                      {log.bounceResult ? (
+                        <span className="text-emerald-400 font-bold">
+                          {log.bounceResult.awardedTeamNames.join(', ')} (+{log.bounceResult.pointsEach} pts each)
+                        </span>
+                      ) : (
+                        <span className="text-slate-500">Passed / No points awarded</span>
+                      )}
+                    </div>
+
+                    {/* Pounce outcomes */}
+                    <div className="text-xs">
+                      <span className="text-slate-400 font-semibold">Pounce Slips: </span>
+                      {log.pounceResults.length === 0 ? (
+                        <span className="text-slate-500">No pounces taken</span>
+                      ) : (
+                        <div className="flex flex-wrap gap-1.5 mt-1">
+                          {log.pounceResults.map((p, pIdx) => (
+                            <span
+                              key={pIdx}
+                              className={`px-2 py-0.5 rounded text-[11px] font-bold border ${
+                                p.status === 'correct'
+                                  ? 'bg-emerald-950/60 border-emerald-500/40 text-emerald-300'
+                                  : 'bg-rose-950/60 border-rose-500/40 text-rose-300'
+                              }`}
+                            >
+                              {p.teamName} ({p.points > 0 ? `+${p.points}` : p.points})
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Special Round Modal */}
       {isSpecialRoundOpen && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 w-full max-w-lg rounded-3xl p-6 shadow-2xl space-y-4">
@@ -491,7 +590,7 @@ export default function App() {
             </div>
 
             <p className="text-slate-400 text-xs">
-              Add (+) or deduct (-) arbitrary score totals per team without changing the direct question sequence.
+              Add (+) or deduct (-) custom points per team without affecting question turns.
             </p>
 
             <div className="grid grid-cols-2 gap-3 max-h-60 overflow-y-auto pr-1">

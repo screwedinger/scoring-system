@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { Team, QuizPhase, PounceStatus } from './types';
+import type { Team, QuizPhase, PounceStatus, QuestionHistoryEntry } from './types';
 
 interface QuizStore {
   teams: Team[];
@@ -11,6 +11,7 @@ interface QuizStore {
   isTimerRunning: boolean;
   pounces: Record<number, PounceStatus>;
   bounceAwardedTeams: number[];
+  historyLog: QuestionHistoryEntry[];
 
   // Actions
   setTeamCount: (count: number) => void;
@@ -67,6 +68,7 @@ export const useQuizStore = create<QuizStore>()(
       isTimerRunning: false,
       pounces: {},
       bounceAwardedTeams: [],
+      historyLog: [],
 
       setTeamCount: (count) => {
         const current = get().teams;
@@ -146,7 +148,7 @@ export const useQuizStore = create<QuizStore>()(
 
       toggleBounceSelection: (teamId) => {
         const { bounceAwardedTeams, pounces } = get();
-        if (pounces[teamId]) return; // Cannot select pounced teams
+        if (pounces[teamId]) return;
 
         if (bounceAwardedTeams.includes(teamId)) {
           set({ bounceAwardedTeams: bounceAwardedTeams.filter((id) => id !== teamId) });
@@ -161,7 +163,6 @@ export const useQuizStore = create<QuizStore>()(
         const { teams, bounceAwardedTeams, pounces } = get();
         let updatedTeams = [...teams];
 
-        // Award bounce points
         if (bounceAwardedTeams.length === 1) {
           updatedTeams = updatedTeams.map((t) =>
             t.id === bounceAwardedTeams[0] ? { ...t, score: t.score + 10 } : t
@@ -179,6 +180,10 @@ export const useQuizStore = create<QuizStore>()(
           teams: updatedTeams,
           phase: hasPounces ? 'POUNCE_REVIEW' : 'QUESTION_END',
         });
+
+        if (!hasPounces) {
+          get().finalizeQuestion();
+        }
       },
 
       setPounceResult: (teamId, status) => {
@@ -188,18 +193,45 @@ export const useQuizStore = create<QuizStore>()(
       },
 
       finalizeQuestion: () => {
-        const { teams, pounces } = get();
+        const { teams, pounces, questionNumber, directTeamIndex, bounceAwardedTeams, historyLog } = get();
         let updatedTeams = [...teams];
+
+        const pounceDetails: QuestionHistoryEntry['pounceResults'] = [];
 
         Object.entries(pounces).forEach(([idStr, status]) => {
           const id = Number(idStr);
           const delta = status === 'correct' ? 15 : -10;
+          const targetTeam = teams.find((t) => t.id === id);
+          if (targetTeam) {
+            pounceDetails.push({
+              teamName: targetTeam.name,
+              status,
+              points: delta,
+            });
+          }
           updatedTeams = updatedTeams.map((t) => (t.id === id ? { ...t, score: t.score + delta } : t));
         });
+
+        const bounceResult =
+          bounceAwardedTeams.length > 0
+            ? {
+                awardedTeamNames: bounceAwardedTeams.map((id) => teams.find((t) => t.id === id)?.name || ''),
+                pointsEach: Math.round((10 / bounceAwardedTeams.length) * 10) / 10,
+              }
+            : null;
+
+        const newLogEntry: QuestionHistoryEntry = {
+          questionNumber,
+          directTeamName: teams[directTeamIndex]?.name || `Team ${directTeamIndex + 1}`,
+          bounceResult,
+          pounceResults: pounceDetails,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        };
 
         set({
           teams: updatedTeams,
           phase: 'QUESTION_END',
+          historyLog: [newLogEntry, ...historyLog],
         });
       },
 
@@ -235,6 +267,7 @@ export const useQuizStore = create<QuizStore>()(
           isTimerRunning: false,
           pounces: {},
           bounceAwardedTeams: [],
+          historyLog: [],
         });
       },
     }),

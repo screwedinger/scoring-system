@@ -5,17 +5,27 @@ export interface Team {
 }
 
 export type QuizPhase = 
-  | 'IDLE'            // Ready to start question
-  | 'POUNCING'         // 30s timer running, logging pounce attempts
-  | 'POUNCE_REVIEW'    // Grading pounce submissions (+15 / -10)
-  | 'BOUNCING'         // Clockwise passing for eligible teams (+10 / +5 split)
-  | 'QUESTION_END';    // Round resolved, ready for next question
+  | 'IDLE'
+  | 'POUNCING'
+  | 'BOUNCING'
+  | 'POUNCE_REVIEW'
+  | 'QUESTION_END';
 
 export type PounceStatus = 'pending' | 'correct' | 'incorrect';
 
-export interface PounceAttempt {
-  teamId: number;
-  status: PounceStatus;
+export interface QuestionHistoryEntry {
+  questionNumber: number;
+  directTeamName: string;
+  bounceResult: {
+    awardedTeamNames: string[];
+    pointsEach: number;
+  } | null;
+  pounceResults: {
+    teamName: string;
+    status: 'correct' | 'incorrect';
+    points: number;
+  }[];
+  timestamp: string;
 }
 
 export interface QuizStateSnapshot {
@@ -25,5 +35,5 @@ export interface QuizStateSnapshot {
   phase: QuizPhase;
   timerSeconds: number;
   pounces: Record<number, PounceStatus>;
-  bounceCurrentIndex: number;
+  bounceAwardedTeams: number[];
 }
