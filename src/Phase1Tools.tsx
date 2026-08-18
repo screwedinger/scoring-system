@@ -11,32 +11,22 @@ const loadDetails = () => {
   try {
     const raw = localStorage.getItem(DETAILS_KEY);
     const saved = raw ? JSON.parse(raw) as Record<string, unknown> : {};
-    return {
-      quizName: typeof saved.quizName === 'string' ? saved.quizName : '',
-    };
-  } catch {
-    return { quizName: '' };
-  }
+    return { quizName: typeof saved.quizName === 'string' ? saved.quizName : '' };
+  } catch { return { quizName: '' }; }
 };
 
 const downloadJSON = (data: unknown, filename: string) => {
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
+  link.href = url; link.download = filename;
+  document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url);
 };
 
 function formatEvent(event: EventView) {
   const payload = event.payload || {};
   if (event.type === 'TEAM_RENAMED') {
-    const newName = typeof payload.newName === 'string'
-      ? payload.newName
-      : typeof payload.name === 'string' ? payload.name : event.label;
+    const newName = typeof payload.newName === 'string' ? payload.newName : typeof payload.name === 'string' ? payload.name : event.label;
     return `Team ${payload.teamId ?? ''} renamed → ${newName}`;
   }
   if (event.type === 'TEAM_COUNT_CHANGED') return `Team count changed → ${payload.count}`;
@@ -56,20 +46,15 @@ export default function Phase1Tools() {
   const [open, setOpen] = useState(false);
   const [endOpen, setEndOpen] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [quizName, setQuizName] = useState(() => loadDetails().quizName);
+  const [quizName] = useState(() => loadDetails().quizName);
 
   const buildArchive = () => {
     const state = useQuizStore.getState();
     const exportedAt = new Date().toISOString();
     const meaningfulEvents = state.events.filter((event) => !IGNORED.has(event.type));
     return {
-      format: 'scoring-system-session',
-      formatVersion: 1,
-      quiz: {
-        name: quizName.trim() || null,
-        startedAt: state.session.createdAt,
-        exportedAt,
-      },
+      format: 'scoring-system-session', formatVersion: 1,
+      quiz: { name: quizName.trim() || null, startedAt: state.session.createdAt, exportedAt },
       session: state.session,
       summary: {
         teams: state.teams.length,
@@ -85,24 +70,18 @@ export default function Phase1Tools() {
 
   const exportJSON = () => {
     const archive = buildArchive();
-    const safeName = quizName.trim()
-      .replace(/[^a-z0-9]+/gi, '-')
-      .replace(/^-|-$/g, '')
-      .toLowerCase() || 'quiz-session';
+    const safeName = quizName.trim().replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() || 'quiz-session';
     downloadJSON(archive, `${safeName}-${new Date().toISOString().slice(0, 10)}.json`);
   };
 
   const endQuiz = () => {
     localStorage.removeItem(DETAILS_KEY);
-    setEndOpen(false);
-    setOpen(false);
-    resetQuiz();
+    setEndOpen(false); setOpen(false); resetQuiz();
   };
 
   const copySessionId = async () => {
     if (navigator.clipboard) await navigator.clipboard.writeText(session.id);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1200);
+    setCopied(true); window.setTimeout(() => setCopied(false), 1200);
   };
 
   return (
@@ -113,7 +92,6 @@ export default function Phase1Tools() {
         <div className="mx-1 h-6 w-px bg-slate-800" />
         <button onClick={() => setOpen(true)} className="flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold text-slate-300 hover:bg-slate-800"><History className="h-4 w-4 text-indigo-400" /><span className="hidden sm:inline">Sessions</span><span className="rounded-md bg-slate-800 px-1.5 py-0.5 font-mono text-[10px]">{visibleEvents.length}</span></button>
       </div>
-
       {open && (
         <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/60 p-4 backdrop-blur-sm sm:items-center">
           <div className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-slate-700 bg-slate-950 shadow-2xl">
@@ -124,7 +102,6 @@ export default function Phase1Tools() {
           </div>
         </div>
       )}
-
       {endOpen && <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"><div className="w-full max-w-md rounded-3xl border border-slate-700 bg-slate-950 p-6 shadow-2xl"><div className="flex items-center gap-3"><Archive className="h-5 w-5 text-amber-400" /><div><h3 className="text-lg font-black text-white">End Quiz?</h3><p className="mt-1 text-xs text-slate-500">This ends the current session and resets the scorer.</p></div></div><div className="mt-5 flex justify-end gap-2"><button onClick={() => setEndOpen(false)} className="rounded-xl border border-slate-700 px-4 py-2.5 text-xs font-bold text-slate-300 hover:bg-slate-800">Cancel</button><button onClick={endQuiz} className="rounded-xl bg-rose-600 px-5 py-2.5 text-xs font-black text-white hover:bg-rose-500">End & Reset Quiz</button></div></div></div>}
     </>
   );
