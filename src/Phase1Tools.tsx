@@ -4,118 +4,35 @@ import { useQuizStore } from './store';
 
 type EventView = { id: string; type: string; label: string; timestamp: string; payload?: Record<string, unknown> };
 type Details = { quizName: string; organizer: string; quizmaster: string; venue: string; notes: string };
-
 const DETAILS_KEY = 'quiz-session-details';
 const IGNORED = new Set(['TIMER_TOGGLED']);
-
-const standingsNotes = (teams: { name: string; score: number }[]) =>
-  [...teams].sort((a, b) => b.score - a.score).slice(0, 8).map((team, i) => `${i + 1}. ${team.name} — ${team.score} pts`).join('\n');
-
+const standingsNotes = (teams: { name: string; score: number }[]) => [...teams].sort((a, b) => b.score - a.score).slice(0, 8).map((team, i) => `${i + 1}. ${team.name} — ${team.score} pts`).join('\n');
 const defaultDetails = (teams: { name: string; score: number }[]): Details => ({ quizName: '', organizer: 'Headrush', quizmaster: '', venue: 'CEP 110', notes: standingsNotes(teams) });
-
-const loadDetails = (teams: { name: string; score: number }[]): Details => {
-  const defaults = defaultDetails(teams);
-  try {
-    const raw = localStorage.getItem(DETAILS_KEY);
-    if (!raw) return defaults;
-    const saved = JSON.parse(raw) as Partial<Details>;
-    return { quizName: saved.quizName || '', organizer: saved.organizer || 'Headrush', quizmaster: saved.quizmaster || '', venue: saved.venue || 'CEP 110', notes: saved.notes || defaults.notes };
-  } catch { return defaults; }
-};
-
-const downloadJSON = (data: unknown, filename: string) => {
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob); const link = document.createElement('a');
-  link.href = url; link.download = filename; document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url);
-};
-
-function formatEvent(event: EventView) {
-  const payload = event.payload || {};
-  if (event.type === 'TEAM_RENAMED') {
-    const previous = typeof payload.previousName === 'string' ? payload.previousName : `Team ${payload.teamId ?? ''}`;
-    const next = typeof payload.newName === 'string' ? payload.newName : typeof payload.name === 'string' ? payload.name : event.label;
-    return `${previous} renamed → ${next}`;
-  }
-  if (event.type === 'TEAM_COUNT_CHANGED') return `Team count changed → ${payload.count}`;
-  return event.label;
-}
+const loadDetails = (teams: { name: string; score: number }[]): Details => { const defaults = defaultDetails(teams); try { const raw = localStorage.getItem(DETAILS_KEY); if (!raw) return defaults; const saved = JSON.parse(raw) as Partial<Details>; return { quizName: saved.quizName || '', organizer: saved.organizer || 'Headrush', quizmaster: saved.quizmaster || '', venue: saved.venue || 'CEP 110', notes: saved.notes || defaults.notes }; } catch { return defaults; } };
+const downloadJSON = (data: unknown, filename: string) => { const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }); const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = filename; document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url); };
+function formatEvent(event: EventView) { const payload = event.payload || {}; if (event.type === 'TEAM_RENAMED') { const previous = typeof payload.previousName === 'string' ? payload.previousName : `Team ${payload.teamId ?? ''}`; const next = typeof payload.newName === 'string' ? payload.newName : typeof payload.name === 'string' ? payload.name : event.label; return `${previous} renamed → ${next}`; } if (event.type === 'TEAM_COUNT_CHANGED') return `Team count changed → ${payload.count}`; return event.label; }
 
 export default function Phase1Tools() {
-  const events = useQuizStore((s) => s.events) as EventView[];
-  const session = useQuizStore((s) => s.session);
-  const teams = useQuizStore((s) => s.teams);
-  const undoStack = useQuizStore((s) => s.undoStack);
-  const redoStack = useQuizStore((s) => s.redoStack);
-  const undo = useQuizStore((s) => s.undo); const redo = useQuizStore((s) => s.redo); const resetQuiz = useQuizStore((s) => s.resetQuiz);
+  const events = useQuizStore((s) => s.events) as EventView[]; const session = useQuizStore((s) => s.session); const teams = useQuizStore((s) => s.teams); const undoStack = useQuizStore((s) => s.undoStack); const redoStack = useQuizStore((s) => s.redoStack); const undo = useQuizStore((s) => s.undo); const redo = useQuizStore((s) => s.redo); const resetQuiz = useQuizStore((s) => s.resetQuiz); const resetQuizNow = useQuizStore((s) => s.resetQuizNow);
   const visibleEvents = useMemo(() => events.filter((e) => !IGNORED.has(e.type)), [events]);
-  const [open, setOpen] = useState(false); const [detailsOpen, setDetailsOpen] = useState(false); const [endOpen, setEndOpen] = useState(false);
-  const [copied, setCopied] = useState(false); const [details, setDetails] = useState<Details>(() => loadDetails(teams));
+  const [open, setOpen] = useState(false); const [detailsOpen, setDetailsOpen] = useState(false); const [endOpen, setEndOpen] = useState(false); const [copied, setCopied] = useState(false); const [details, setDetails] = useState<Details>(() => loadDetails(teams));
 
-  useEffect(() => {
-    const openEnd = () => { setOpen(true); setEndOpen(true); };
-    window.addEventListener('quiz:end-session', openEnd);
-    return () => window.removeEventListener('quiz:end-session', openEnd);
-  }, []);
-
-  useEffect(() => {
-    if (!localStorage.getItem(DETAILS_KEY) && !details.notes) setDetails((d) => ({ ...d, notes: standingsNotes(teams) }));
-  }, [teams, details.notes]);
-
+  useEffect(() => { const openEnd = () => { setOpen(true); setDetailsOpen(false); setEndOpen(true); }; window.addEventListener('quiz:end-session', openEnd); return () => window.removeEventListener('quiz:end-session', openEnd); }, []);
+  useEffect(() => { if (!localStorage.getItem(DETAILS_KEY)) setDetails((d) => ({ ...d, notes: standingsNotes(teams) })); }, [teams]);
   const saveDetails = () => { localStorage.setItem(DETAILS_KEY, JSON.stringify(details)); setDetailsOpen(false); };
   const update = (key: keyof Details, value: string) => setDetails((d) => ({ ...d, [key]: value }));
-
-  const buildArchive = () => {
-    const state = useQuizStore.getState(); const exportedAt = new Date().toISOString();
-    const meaningfulEvents = state.events.filter((e) => !IGNORED.has(e.type));
-    return {
-      format: 'scoring-system-session', formatVersion: 1,
-      quiz: { name: details.quizName.trim() || null, organizer: details.organizer.trim() || 'Headrush', quizmaster: details.quizmaster.trim() || null, venue: details.venue.trim() || 'CEP 110', notes: details.notes.trim() || standingsNotes(state.teams), startedAt: state.session.createdAt, endedAt: exportedAt },
-      session: state.session,
-      summary: { teams: state.teams.length, questionsCompleted: state.historyLog.filter((e) => e.type === 'question').length, events: meaningfulEvents.length },
-      teams: state.teams.map((team) => ({ id: team.id, finalName: team.name, finalScore: team.score })),
-      scoringHistory: state.historyLog,
-      events: meaningfulEvents,
-    };
-  };
-
-  const exportJSON = () => {
-    const archive = buildArchive(); const safe = details.quizName.trim().replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() || 'quiz-session';
-    downloadJSON(archive, `${safe}-${new Date().toISOString().slice(0, 10)}.json`);
-  };
-
-  const endQuiz = () => {
-    if (!details.quizName.trim()) { setEndOpen(true); setDetailsOpen(true); return; }
-    localStorage.setItem(DETAILS_KEY, JSON.stringify(details));
-    setEndOpen(false); setDetailsOpen(false); setOpen(false);
-    resetQuiz();
-  };
-
+  const buildArchive = () => { const state = useQuizStore.getState(); const exportedAt = new Date().toISOString(); const meaningfulEvents = state.events.filter((e) => !IGNORED.has(e.type)); return { format: 'scoring-system-session', formatVersion: 1, quiz: { name: details.quizName.trim() || null, organizer: details.organizer.trim() || 'Headrush', quizmaster: details.quizmaster.trim() || null, venue: details.venue.trim() || 'CEP 110', notes: details.notes.trim() || standingsNotes(state.teams), startedAt: state.session.createdAt, endedAt: exportedAt }, session: state.session, summary: { teams: state.teams.length, questionsCompleted: state.historyLog.filter((e) => e.type === 'question').length, events: meaningfulEvents.length }, teams: state.teams.map((team) => ({ id: team.id, finalName: team.name, finalScore: team.score })), scoringHistory: state.historyLog, events: meaningfulEvents }; };
+  const exportJSON = () => { const archive = buildArchive(); const safe = details.quizName.trim().replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() || 'quiz-session'; downloadJSON(archive, `${safe}-${new Date().toISOString().slice(0, 10)}.json`); };
+  const endQuiz = () => { if (!details.quizName.trim()) { setEndOpen(false); setDetailsOpen(true); return; } localStorage.setItem(DETAILS_KEY, JSON.stringify(details)); setEndOpen(false); setDetailsOpen(false); setOpen(false); resetQuizNow(); };
   const copySessionId = async () => { if (navigator.clipboard) await navigator.clipboard.writeText(session.id); setCopied(true); window.setTimeout(() => setCopied(false), 1200); };
 
   return <>
-    <div className="fixed bottom-4 left-4 z-50 flex items-center gap-1 rounded-2xl border border-slate-700 bg-slate-950/95 p-1.5 shadow-2xl backdrop-blur">
-      <button onClick={undo} disabled={!undoStack.length} title="Undo" className="rounded-xl p-2.5 text-slate-300 hover:bg-slate-800 disabled:opacity-30"><RotateCcw className="h-4 w-4" /></button>
-      <button onClick={redo} disabled={!redoStack.length} title="Redo" className="rounded-xl p-2.5 text-slate-300 hover:bg-slate-800 disabled:opacity-30"><Redo2 className="h-4 w-4" /></button>
-      <div className="mx-1 h-6 w-px bg-slate-800" />
-      <button onClick={() => setOpen(true)} className="flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold text-slate-300 hover:bg-slate-800"><History className="h-4 w-4 text-indigo-400" /><span className="hidden sm:inline">Sessions</span><span className="rounded-md bg-slate-800 px-1.5 py-0.5 font-mono text-[10px]">{visibleEvents.length}</span></button>
-    </div>
-
+    <div className="fixed bottom-4 left-4 z-50 flex items-center gap-1 rounded-2xl border border-slate-700 bg-slate-950/95 p-1.5 shadow-2xl backdrop-blur"><button onClick={undo} disabled={!undoStack.length} title="Undo" className="rounded-xl p-2.5 text-slate-300 hover:bg-slate-800 disabled:opacity-30"><RotateCcw className="h-4 w-4" /></button><button onClick={redo} disabled={!redoStack.length} title="Redo" className="rounded-xl p-2.5 text-slate-300 hover:bg-slate-800 disabled:opacity-30"><Redo2 className="h-4 w-4" /></button><div className="mx-1 h-6 w-px bg-slate-800" /><button onClick={() => setOpen(true)} className="flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold text-slate-300 hover:bg-slate-800"><History className="h-4 w-4 text-indigo-400" /><span className="hidden sm:inline">Sessions</span><span className="rounded-md bg-slate-800 px-1.5 py-0.5 font-mono text-[10px]">{visibleEvents.length}</span></button></div>
     {open && <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/60 p-4 backdrop-blur-sm sm:items-center"><div className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-slate-700 bg-slate-950 shadow-2xl">
       <div className="flex items-center justify-between border-b border-slate-800 px-5 py-4"><div><div className="flex items-center gap-2 text-sm font-black text-white"><History className="h-4 w-4 text-indigo-400" /> Sessions</div><p className="mt-1 text-[11px] text-slate-500">Current quiz session.</p></div><button onClick={() => setOpen(false)} className="rounded-xl p-2 text-slate-400 hover:bg-slate-800"><X className="h-5 w-5" /></button></div>
       <div className="flex border-b border-slate-800"><button onClick={() => setDetailsOpen(false)} className={`flex-1 px-4 py-3 text-xs font-bold ${!detailsOpen ? 'border-b-2 border-indigo-500 text-white' : 'text-slate-500'}`}><History className="mr-1 inline h-3.5 w-3.5" /> Activity</button><button onClick={() => setDetailsOpen(true)} className={`flex-1 px-4 py-3 text-xs font-bold ${detailsOpen ? 'border-b-2 border-indigo-500 text-white' : 'text-slate-500'}`}><FileText className="mr-1 inline h-3.5 w-3.5" /> Quiz Details</button></div>
-      {!detailsOpen ? <>
-        <div className="grid grid-cols-3 gap-3 border-b border-slate-800 p-4"><div className="rounded-2xl border border-slate-800 bg-slate-900 p-3"><div className="text-[10px] uppercase text-slate-500">Events</div><div className="mt-1 text-xl font-black text-white">{visibleEvents.length}</div></div><div className="rounded-2xl border border-slate-800 bg-slate-900 p-3"><div className="text-[10px] uppercase text-slate-500">Undo</div><div className="mt-1 text-xl font-black text-white">{undoStack.length}</div></div><div className="rounded-2xl border border-slate-800 bg-slate-900 p-3"><div className="text-[10px] uppercase text-slate-500">Session</div><div className="mt-1 truncate font-mono text-xs text-slate-300">{session.id.slice(0, 8)}</div></div></div>
-        <div className="flex items-center gap-2 border-b border-slate-800 px-4 py-3"><div className="min-w-0 flex-1"><div className="text-[10px] uppercase text-slate-500">Session ID</div><div className="truncate font-mono text-xs text-slate-300">{session.id}</div></div><button onClick={copySessionId} className="shrink-0 rounded-xl border border-slate-700 px-3 py-2 text-xs font-bold text-slate-300 hover:bg-slate-800">{copied ? 'Copied' : 'Copy ID'}</button><button onClick={exportJSON} className="shrink-0 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs font-bold text-emerald-300 hover:bg-emerald-500/20"><Download className="mr-1 inline h-3.5 w-3.5" /> Export JSON</button><button onClick={() => setEndOpen(true)} className="shrink-0 rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs font-bold text-rose-300 hover:bg-rose-500/20"><Archive className="mr-1 inline h-3.5 w-3.5" /> End Quiz</button></div>
-        <div className="flex-1 overflow-y-auto p-4">{visibleEvents.length === 0 ? <div className="p-8 text-center text-sm text-slate-500">No events yet.</div> : <div className="space-y-2">{visibleEvents.map((event) => <div key={event.id} className="flex items-start gap-3 rounded-2xl border border-slate-800 bg-slate-900/70 p-3"><div className="mt-1 h-2 w-2 shrink-0 rounded-full bg-indigo-400" /><div className="min-w-0 flex-1"><div className="text-xs font-bold text-slate-200">{formatEvent(event)}</div><div className="mt-1 flex gap-2 text-[10px] text-slate-500"><span className="font-mono">{event.type}</span><span>•</span><span>{new Date(event.timestamp).toLocaleTimeString()}</span></div></div></div>)}</div>}</div>
-      </> : <div className="flex-1 overflow-y-auto space-y-4 p-5">
-        <label className="block"><span className="mb-1 block text-xs font-bold uppercase text-slate-500">Quiz Name *</span><input value={details.quizName} onChange={(e) => update('quizName', e.target.value)} placeholder="Netflix & Quiz" className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2.5 text-sm text-white outline-none focus:border-indigo-500" /></label>
-        <div className="grid gap-4 sm:grid-cols-2"><label><span className="mb-1 block text-xs font-bold uppercase text-slate-500">Organizer</span><input value={details.organizer} onChange={(e) => update('organizer', e.target.value)} className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2.5 text-sm text-white" /></label><label><span className="mb-1 block text-xs font-bold uppercase text-slate-500">Quizmaster</span><input value={details.quizmaster} onChange={(e) => update('quizmaster', e.target.value)} placeholder="Quizmaster name" className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2.5 text-sm text-white" /></label></div>
-        <label className="block"><span className="mb-1 block text-xs font-bold uppercase text-slate-500">Venue</span><input value={details.venue} onChange={(e) => update('venue', e.target.value)} className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2.5 text-sm text-white" /></label>
-        <label className="block"><span className="mb-1 block text-xs font-bold uppercase text-slate-500">Notes</span><textarea value={details.notes} onChange={(e) => update('notes', e.target.value)} rows={8} className="w-full resize-none rounded-xl border border-slate-700 bg-slate-900 px-3 py-2.5 font-mono text-xs text-white" /></label>
-        <button onClick={saveDetails} className="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 py-2.5 text-xs font-black text-white hover:bg-indigo-500"><Save className="h-4 w-4" /> Save Quiz Details</button>
-      </div>}
+      {!detailsOpen ? <><div className="grid grid-cols-3 gap-3 border-b border-slate-800 p-4"><div className="rounded-2xl border border-slate-800 bg-slate-900 p-3"><div className="text-[10px] uppercase text-slate-500">Events</div><div className="mt-1 text-xl font-black text-white">{visibleEvents.length}</div></div><div className="rounded-2xl border border-slate-800 bg-slate-900 p-3"><div className="text-[10px] uppercase text-slate-500">Undo</div><div className="mt-1 text-xl font-black text-white">{undoStack.length}</div></div><div className="rounded-2xl border border-slate-800 bg-slate-900 p-3"><div className="text-[10px] uppercase text-slate-500">Session</div><div className="mt-1 truncate font-mono text-xs text-slate-300">{session.id.slice(0, 8)}</div></div></div><div className="flex items-center gap-2 border-b border-slate-800 px-4 py-3"><div className="min-w-0 flex-1"><div className="text-[10px] uppercase text-slate-500">Session ID</div><div className="truncate font-mono text-xs text-slate-300">{session.id}</div></div><button onClick={copySessionId} className="shrink-0 rounded-xl border border-slate-700 px-3 py-2 text-xs font-bold text-slate-300 hover:bg-slate-800">{copied ? 'Copied' : 'Copy ID'}</button><button onClick={exportJSON} className="shrink-0 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs font-bold text-emerald-300 hover:bg-emerald-500/20"><Download className="mr-1 inline h-3.5 w-3.5" /> Export JSON</button><button onClick={() => setEndOpen(true)} className="shrink-0 rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs font-bold text-rose-300 hover:bg-rose-500/20"><Archive className="mr-1 inline h-3.5 w-3.5" /> End Quiz</button></div><div className="flex-1 overflow-y-auto p-4">{visibleEvents.length === 0 ? <div className="p-8 text-center text-sm text-slate-500">No events yet.</div> : <div className="space-y-2">{visibleEvents.map((event) => <div key={event.id} className="flex items-start gap-3 rounded-2xl border border-slate-800 bg-slate-900/70 p-3"><div className="mt-1 h-2 w-2 shrink-0 rounded-full bg-indigo-400" /><div className="min-w-0 flex-1"><div className="text-xs font-bold text-slate-200">{formatEvent(event)}</div><div className="mt-1 flex gap-2 text-[10px] text-slate-500"><span className="font-mono">{event.type}</span><span>•</span><span>{new Date(event.timestamp).toLocaleTimeString()}</span></div></div></div>)}</div>}</div></> : <div className="flex-1 overflow-y-auto space-y-4 p-5"><label className="block"><span className="mb-1 block text-xs font-bold uppercase text-slate-500">Quiz Name *</span><input value={details.quizName} onChange={(e) => update('quizName', e.target.value)} placeholder="Netflix & Quiz" className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2.5 text-sm text-white outline-none focus:border-indigo-500" /></label><div className="grid gap-4 sm:grid-cols-2"><label><span className="mb-1 block text-xs font-bold uppercase text-slate-500">Organizer</span><input value={details.organizer} onChange={(e) => update('organizer', e.target.value)} className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2.5 text-sm text-white" /></label><label><span className="mb-1 block text-xs font-bold uppercase text-slate-500">Quizmaster</span><input value={details.quizmaster} onChange={(e) => update('quizmaster', e.target.value)} placeholder="Quizmaster name" className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2.5 text-sm text-white" /></label></div><label className="block"><span className="mb-1 block text-xs font-bold uppercase text-slate-500">Venue</span><input value={details.venue} onChange={(e) => update('venue', e.target.value)} className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2.5 text-sm text-white" /></label><label className="block"><span className="mb-1 block text-xs font-bold uppercase text-slate-500">Notes</span><textarea value={details.notes} onChange={(e) => update('notes', e.target.value)} rows={8} className="w-full resize-none rounded-xl border border-slate-700 bg-slate-900 px-3 py-2.5 font-mono text-xs text-white" /></label><button onClick={saveDetails} className="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 py-2.5 text-xs font-black text-white hover:bg-indigo-500"><Save className="h-4 w-4" /> Save Quiz Details</button></div>}
     </div></div>}
-
-    {endOpen && <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"><div className="w-full max-w-md rounded-3xl border border-slate-700 bg-slate-950 p-6 shadow-2xl"><div className="flex items-center gap-3"><Archive className="h-5 w-5 text-amber-400" /><div><h3 className="text-lg font-black text-white">End Quiz?</h3><p className="mt-1 text-xs text-slate-500">The session will be ended and a new empty session will start.</p></div></div>{!details.quizName.trim() && <p className="mt-4 rounded-xl border border-amber-500/20 bg-amber-500/10 p-3 text-xs text-amber-300">Please enter a Quiz Name in Quiz Details before ending this session.</p>}<div className="mt-5 flex justify-end gap-2"><button onClick={() => setEndOpen(false)} className="rounded-xl border border-slate-700 px-4 py-2.5 text-xs font-bold text-slate-300 hover:bg-slate-800">Cancel</button><button onClick={endQuiz} className="rounded-xl bg-rose-600 px-5 py-2.5 text-xs font-black text-white hover:bg-rose-500">{details.quizName.trim() ? 'End & Reset Quiz' : 'Open Quiz Details'}</button></div></div></div>}
+    {endOpen && <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"><div className="w-full max-w-md rounded-3xl border border-slate-700 bg-slate-950 p-6 shadow-2xl"><div className="flex items-center gap-3"><Archive className="h-5 w-5 text-amber-400" /><div><h3 className="text-lg font-black text-white">End Quiz?</h3><p className="mt-1 text-xs text-slate-500">This ends the current session and starts a fresh one.</p></div></div>{!details.quizName.trim() && <p className="mt-4 rounded-xl border border-amber-500/20 bg-amber-500/10 p-3 text-xs text-amber-300">Quiz Details need a Quiz Name before this session can be ended.</p>}<div className="mt-5 flex justify-end gap-2"><button onClick={() => setEndOpen(false)} className="rounded-xl border border-slate-700 px-4 py-2.5 text-xs font-bold text-slate-300 hover:bg-slate-800">Cancel</button><button onClick={endQuiz} className="rounded-xl bg-rose-600 px-5 py-2.5 text-xs font-black text-white hover:bg-rose-500">{details.quizName.trim() ? 'End & Reset Quiz' : 'Fill Quiz Details'}</button></div></div></div>}
   </>;
 }
