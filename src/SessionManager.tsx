@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useState } from 'react';
 import { Archive, Check, Download, X } from 'lucide-react';
 import { useQuizStore } from './store';
 
@@ -10,17 +10,6 @@ type QuizEventView = { id: string; type: string; label: string; timestamp: strin
 
 function getSavedDetails(sessionId: string): Partial<SessionDetails> {
   try { const raw = localStorage.getItem(`${METADATA_KEY}:${sessionId}`); return raw ? JSON.parse(raw) : {}; } catch { return {}; }
-}
-
-function formatEvent(event: QuizEventView) {
-  const payload = event.payload || {};
-  if (event.type === 'TEAM_RENAMED') {
-    const oldName = typeof payload.previousName === 'string' ? payload.previousName : `Team ${payload.teamId}`;
-    const newName = typeof payload.newName === 'string' ? payload.newName : typeof payload.name === 'string' ? payload.name : oldName;
-    return `Team renamed: ${oldName} → ${newName}`;
-  }
-  if (event.type === 'TEAM_COUNT_CHANGED') return `Team count changed → ${payload.count}`;
-  return event.label;
 }
 
 function downloadJSON(payload: unknown, filename: string) {
@@ -39,14 +28,7 @@ export default function SessionManager() {
     return { quizName: saved.quizName || '', organizer: saved.organizer || '', quizmaster: saved.quizmaster || '', venue: saved.venue || '', notes: saved.notes || '' };
   });
   const events = useQuizStore((state) => state.events) as QuizEventView[];
-  const visibleEvents = useMemo(() => events.filter((event) => !IGNORED_EVENT_TYPES.has(event.type)), [events]);
-
-  // The existing Reset Complete Quiz button now goes through the archive flow.
-  useEffect(() => {
-    const originalReset = useQuizStore.getState().resetQuiz;
-    useQuizStore.setState({ resetQuiz: () => setOpen(true) });
-    return () => useQuizStore.setState({ resetQuiz: originalReset });
-  }, []);
+  const visibleEventCount = events.filter((event) => !IGNORED_EVENT_TYPES.has(event.type)).length;
 
   const updateDetail = (key: keyof SessionDetails, value: string) => {
     const next = { ...details, [key]: value }; setDetails(next);
@@ -103,6 +85,6 @@ export default function SessionManager() {
 
   function stateSummary() {
     const state = useQuizStore.getState();
-    return `${state.teams.length} teams · ${state.historyLog.filter((entry) => entry.type === 'question').length} questions · ${visibleEvents.length} logged events`;
+    return `${state.teams.length} teams · ${state.historyLog.filter((entry) => entry.type === 'question').length} questions · ${visibleEventCount} logged events`;
   }
 }
