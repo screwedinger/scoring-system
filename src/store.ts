@@ -36,7 +36,32 @@ export const useQuizStore = create<QuizStore>()(persist((set, get) => {
   return {
     ...resetState(),
     setTeamCount: (count) => { const safeCount = Math.max(2, Math.min(10, Math.floor(count))); commit('TEAM_COUNT_CHANGED', `Set team count to ${safeCount}`, (state) => { const current = state.teams; const teams = safeCount > current.length ? [...current, ...Array.from({ length: safeCount - current.length }, (_, i) => ({ id: current.length + i + 1, name: `Team ${current.length + i + 1}`, score: 0 }))] : current.slice(0, safeCount); return { teams, directTeamIndex: 0 }; }, { count: safeCount }); },
-    updateTeamName: (id, name) => { const state = get(); const previousName = state.teams.find((team) => team.id === id)?.name || `Team ${id}`; if (previousName === name) return; commit('TEAM_RENAMED', `${previousName} renamed → ${name}`, (current) => ({ teams: current.teams.map((team) => team.id === id ? { ...team, name } : team) }), { teamId: id, previousName, newName: name }); },
+    updateTeamName: (id, name) => {
+      const state = get();
+      const currentTeam = state.teams.find((team) => team.id === id);
+      const previousName = currentTeam?.name || `Team ${id}`;
+      if (previousName === name) return;
+
+      const lastEvent = state.events[0];
+      const lastEventTeamId = lastEvent?.type === 'TEAM_RENAMED' && lastEvent.payload && typeof lastEvent.payload.teamId === 'number'
+        ? lastEvent.payload.teamId
+        : null;
+
+      // Text inputs fire once per character. Keep a single rename event and a single
+      // undo step while the user is typing the same team's name.
+      if (lastEventTeamId === id) {
+        set((current) => ({
+          teams: current.teams.map((team) => team.id === id ? { ...team, name } : team),
+          events: current.events.map((event, index) => index === 0
+            ? { ...event, label: `Team ${id} renamed`, timestamp: now(), payload: { ...event.payload, newName: name } }
+            : event),
+          session: { ...current.session, updatedAt: now() }
+        }));
+        return;
+      }
+
+      commit('TEAM_RENAMED', `Team ${id} renamed`, (current) => ({ teams: current.teams.map((team) => team.id === id ? { ...team, name } : team) }), { teamId: id, previousName, newName: name });
+    },
     manualAdjustScore: (id, delta) => { if (!Number.isFinite(delta) || delta === 0) return; commit('SCORE_ADJUSTED', `Adjusted Team ${id} by ${delta > 0 ? '+' : ''}${delta}`, (state) => ({ teams: state.teams.map((team) => team.id === id ? { ...team, score: team.score + delta } : team) }), { teamId: id, delta }); },
     setDirectTeam: (index) => commit('SCORE_ADJUSTED', 'Changed direct team', () => ({ directTeamIndex: index })),
     switchRound: (roundNum) => { const { teams } = get(); if (roundNum === 2) commit('ROUND_SWITCHED', 'Switched to Round 2', () => ({ roundNumber: 2, roundName: 'Round 2', bounceDirection: 'anticlockwise', questionNumber: 1, directTeamIndex: teams.length - 1, phase: 'IDLE', timerSeconds: 30, isTimerRunning: false, pounces: {}, bounceCustomPoints: {} })); else commit('ROUND_SWITCHED', 'Switched to Round 1', () => ({ roundNumber: 1, roundName: 'Round 1', bounceDirection: 'clockwise', questionNumber: 1, directTeamIndex: 0, phase: 'IDLE', timerSeconds: 30, isTimerRunning: false, pounces: {}, bounceCustomPoints: {} })); },
