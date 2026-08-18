@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Archive, Check, Clipboard, Download, FileText, History, Redo2, RotateCcw, Save, X } from 'lucide-react';
+import { Archive, Download, FileText, History, Redo2, RotateCcw, Save, X } from 'lucide-react';
 import { useQuizStore } from './store';
 
 type EventView = { id: string; type: string; label: string; timestamp: string; payload?: Record<string, unknown> };
