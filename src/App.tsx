@@ -124,11 +124,28 @@ export default function App() {
 
   // Snake Grid Layout
   const snakeGridTeams = useMemo(() => {
+  // Existing layout for 2–8 teams.
+  if (teams.length <= 8) {
     const half = Math.ceil(teams.length / 2);
     const topRow = teams.slice(0, half);
     const bottomRow = teams.slice(half).reverse();
+
     return [...topRow, ...bottomRow];
-  }, [teams]);
+  }
+
+  // 9–10 teams:
+  // 1  2  3  4
+  // 8  7  6  5
+  // 9  10
+  const firstEight = teams.slice(0, 8);
+  const extraTeams = teams.slice(8);
+
+  return [
+    ...firstEight.slice(0, 4),
+    ...firstEight.slice(4).reverse(),
+    ...extraTeams,
+  ];
+}, [teams]);
 
   // Export History as CSV
   const exportHistoryCSV = () => {
