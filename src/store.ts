@@ -1,484 +1,61 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type {
-  Team,
-  QuizPhase,
-  PounceStatus,
-  BounceDirection,
-  QuestionHistoryEntry,
-  QuizEvent,
-  QuizEventType,
-  QuizSession,
-  QuizStateSnapshot,
-} from './types';
+import type { Team, QuizPhase, PounceStatus, BounceDirection, QuestionHistoryEntry, QuizEvent, QuizEventType, QuizSession, QuizStateSnapshot } from './types';
 
 const MAX_UNDO_STEPS = 50;
 const MAX_EVENTS = 500;
 
 type QuizStore = {
-  teams: Team[];
-  questionNumber: number;
-  roundNumber: number;
-  roundName: string;
-  bounceDirection: BounceDirection;
-  directTeamIndex: number;
-  phase: QuizPhase;
-  timerSeconds: number;
-  isTimerRunning: boolean;
-  pounces: Record<number, PounceStatus>;
-  bounceCustomPoints: Record<number, number>;
-  historyLog: QuestionHistoryEntry[];
-  events: QuizEvent[];
-  session: QuizSession;
-  undoStack: QuizStateSnapshot[];
-  redoStack: QuizStateSnapshot[];
-
-  setTeamCount: (count: number) => void;
-  updateTeamName: (id: number, name: string) => void;
-  manualAdjustScore: (id: number, delta: number) => void;
-  setDirectTeam: (index: number) => void;
-  switchRound: (roundNum: number) => void;
-  startQuestion: () => void;
-  tickTimer: () => void;
-  toggleTimer: () => void;
-  togglePounce: (teamId: number) => void;
-  skipToBounce: () => void;
-  toggleBounceSelection: (teamId: number) => void;
-  setBouncePointsForTeam: (teamId: number, points: number) => void;
-  confirmBounceAndReviewPounce: () => void;
-  setPounceResult: (teamId: number, status: 'correct' | 'incorrect') => void;
-  togglePounceReviewKey: (teamId: number) => void;
-  finalizeQuestion: () => void;
-  nextQuestion: () => void;
-  applySpecialRoundScores: (adjustments: Record<number, number>, specialTitle?: string) => void;
-  resetQuiz: () => void;
-  undo: () => void;
-  redo: () => void;
-  canUndo: () => boolean;
-  canRedo: () => boolean;
+  teams: Team[]; questionNumber: number; roundNumber: number; roundName: string; bounceDirection: BounceDirection; directTeamIndex: number; phase: QuizPhase; timerSeconds: number; isTimerRunning: boolean; pounces: Record<number, PounceStatus>; bounceCustomPoints: Record<number, number>; historyLog: QuestionHistoryEntry[]; events: QuizEvent[]; session: QuizSession; undoStack: QuizStateSnapshot[]; redoStack: QuizStateSnapshot[];
+  setTeamCount: (count: number) => void; updateTeamName: (id: number, name: string) => void; manualAdjustScore: (id: number, delta: number) => void; setDirectTeam: (index: number) => void; switchRound: (roundNum: number) => void; startQuestion: () => void; tickTimer: () => void; toggleTimer: () => void; togglePounce: (teamId: number) => void; skipToBounce: () => void; toggleBounceSelection: (teamId: number) => void; setBouncePointsForTeam: (teamId: number, points: number) => void; confirmBounceAndReviewPounce: () => void; setPounceResult: (teamId: number, status: 'correct' | 'incorrect') => void; togglePounceReviewKey: (teamId: number) => void; finalizeQuestion: () => void; nextQuestion: () => void; applySpecialRoundScores: (adjustments: Record<number, number>, specialTitle?: string) => void; resetQuiz: () => void; undo: () => void; redo: () => void; canUndo: () => boolean; canRedo: () => boolean;
 };
 
-const DEFAULT_TEAMS: Team[] = Array.from({ length: 8 }, (_, i) => ({
-  id: i + 1,
-  name: `Team ${i + 1}`,
-  score: 0,
-}));
-
+const DEFAULT_TEAMS: Team[] = Array.from({ length: 8 }, (_, i) => ({ id: i + 1, name: `Team ${i + 1}`, score: 0 }));
 const now = () => new Date().toISOString();
 const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
-const makeSession = (): QuizSession => {
-  const timestamp = now();
-  return { id: crypto.randomUUID(), createdAt: timestamp, updatedAt: timestamp };
-};
+const makeSession = (): QuizSession => { const timestamp = now(); return { id: crypto.randomUUID(), createdAt: timestamp, updatedAt: timestamp }; };
+const quizChannel = typeof window !== 'undefined' && 'BroadcastChannel' in window ? new BroadcastChannel('quiz_display_channel') : null;
+export const broadcastState = (state: QuizStore) => { quizChannel?.postMessage({ teams: state.teams, questionNumber: state.questionNumber, roundName: state.roundName, roundNumber: state.roundNumber, bounceDirection: state.bounceDirection, directTeamIndex: state.directTeamIndex, phase: state.phase, timerSeconds: state.timerSeconds, isTimerRunning: state.isTimerRunning }); };
+const snapshotFromState = (state: QuizStore): QuizStateSnapshot => ({ teams: clone(state.teams), questionNumber: state.questionNumber, roundNumber: state.roundNumber, roundName: state.roundName, bounceDirection: state.bounceDirection, directTeamIndex: state.directTeamIndex, phase: state.phase, timerSeconds: state.timerSeconds, isTimerRunning: state.isTimerRunning, pounces: clone(state.pounces), bounceCustomPoints: clone(state.bounceCustomPoints), historyLog: clone(state.historyLog), events: clone(state.events) });
+const applySnapshot = (snapshot: QuizStateSnapshot) => ({ teams: clone(snapshot.teams), questionNumber: snapshot.questionNumber, roundNumber: snapshot.roundNumber, roundName: snapshot.roundName, bounceDirection: snapshot.bounceDirection, directTeamIndex: snapshot.directTeamIndex, phase: snapshot.phase, timerSeconds: snapshot.timerSeconds, isTimerRunning: snapshot.isTimerRunning, pounces: clone(snapshot.pounces), bounceCustomPoints: clone(snapshot.bounceCustomPoints), historyLog: clone(snapshot.historyLog), events: clone(snapshot.events) });
+const makeEvent = (type: QuizEventType, label: string, payload?: Record<string, unknown>): QuizEvent => ({ id: crypto.randomUUID(), type, label, timestamp: now(), payload });
 
-const quizChannel = typeof window !== 'undefined' && 'BroadcastChannel' in window
-  ? new BroadcastChannel('quiz_display_channel')
-  : null;
-
-export const broadcastState = (state: QuizStore) => {
-  quizChannel?.postMessage({
-    teams: state.teams,
-    questionNumber: state.questionNumber,
-    roundName: state.roundName,
-    roundNumber: state.roundNumber,
-    bounceDirection: state.bounceDirection,
-    directTeamIndex: state.directTeamIndex,
-    phase: state.phase,
-    timerSeconds: state.timerSeconds,
-    isTimerRunning: state.isTimerRunning,
-  });
-};
-
-const snapshotFromState = (state: QuizStore): QuizStateSnapshot => ({
-  teams: clone(state.teams),
-  questionNumber: state.questionNumber,
-  roundNumber: state.roundNumber,
-  roundName: state.roundName,
-  bounceDirection: state.bounceDirection,
-  directTeamIndex: state.directTeamIndex,
-  phase: state.phase,
-  timerSeconds: state.timerSeconds,
-  isTimerRunning: state.isTimerRunning,
-  pounces: clone(state.pounces),
-  bounceCustomPoints: clone(state.bounceCustomPoints),
-  historyLog: clone(state.historyLog),
-  events: clone(state.events),
-});
-
-const applySnapshot = (snapshot: QuizStateSnapshot) => ({
-  teams: clone(snapshot.teams),
-  questionNumber: snapshot.questionNumber,
-  roundNumber: snapshot.roundNumber,
-  roundName: snapshot.roundName,
-  bounceDirection: snapshot.bounceDirection,
-  directTeamIndex: snapshot.directTeamIndex,
-  phase: snapshot.phase,
-  timerSeconds: snapshot.timerSeconds,
-  isTimerRunning: snapshot.isTimerRunning,
-  pounces: clone(snapshot.pounces),
-  bounceCustomPoints: clone(snapshot.bounceCustomPoints),
-  historyLog: clone(snapshot.historyLog),
-  events: clone(snapshot.events),
-});
-
-const makeEvent = (type: QuizEventType, label: string, payload?: Record<string, unknown>): QuizEvent => ({
-  id: crypto.randomUUID(),
-  type,
-  label,
-  timestamp: now(),
-  payload,
-});
-
-export const useQuizStore = create<QuizStore>()(
-  persist(
-    (set, get) => {
-      const commit = (
-        type: QuizEventType,
-        label: string,
-        updater: (state: QuizStore) => Partial<QuizStore>,
-        payload?: Record<string, unknown>,
-      ) => {
-        const before = snapshotFromState(get());
-        set((state) => {
-          const event = makeEvent(type, label, payload);
-          const updates = updater(state);
-          return {
-            ...updates,
-            events: [event, ...state.events].slice(0, MAX_EVENTS),
-            undoStack: [...state.undoStack, before].slice(-MAX_UNDO_STEPS),
-            redoStack: [],
-            session: { ...state.session, updatedAt: now() },
-          };
-        });
-      };
-
-      const finalizeCurrentQuestion = (state: QuizStore) => {
-        let updatedTeams = clone(state.teams);
-        const pounceDetails: NonNullable<QuestionHistoryEntry['pounceResults']> = [];
-
-        Object.entries(state.pounces).forEach(([idStr, status]) => {
-          const id = Number(idStr);
-          const finalStatus = status === 'incorrect' ? 'incorrect' : 'correct';
-          const delta = finalStatus === 'correct' ? 15 : -10;
-          const targetTeam = state.teams.find((t) => t.id === id);
-          if (targetTeam) {
-            pounceDetails.push({ teamName: targetTeam.name, status: finalStatus, points: delta });
-          }
-          updatedTeams = updatedTeams.map((t) => t.id === id ? { ...t, score: t.score + delta } : t);
-        });
-
-        const bounceResult = Object.keys(state.bounceCustomPoints).length > 0
-          ? Object.entries(state.bounceCustomPoints).map(([idStr, points]) => ({
-              teamName: state.teams.find((t) => t.id === Number(idStr))?.name || '',
-              points,
-            }))
-          : null;
-
-        const newLogEntry: QuestionHistoryEntry = {
-          type: 'question',
-          questionNumber: state.questionNumber,
-          roundName: state.roundName,
-          direction: state.bounceDirection,
-          directTeamName: state.teams[state.directTeamIndex]?.name || `Team ${state.directTeamIndex + 1}`,
-          bounceResult,
-          pounceResults: pounceDetails,
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        };
-
-        return {
-          teams: updatedTeams,
-          phase: 'QUESTION_END' as QuizPhase,
-          historyLog: [newLogEntry, ...state.historyLog],
-        };
-      };
-
-      return {
-        teams: DEFAULT_TEAMS,
-        questionNumber: 1,
-        roundNumber: 1,
-        roundName: 'Round 1',
-        bounceDirection: 'clockwise',
-        directTeamIndex: 0,
-        phase: 'IDLE',
-        timerSeconds: 30,
-        isTimerRunning: false,
-        pounces: {},
-        bounceCustomPoints: {},
-        historyLog: [],
-        events: [],
-        session: makeSession(),
-        undoStack: [],
-        redoStack: [],
-
-        setTeamCount: (count) => {
-          const safeCount = Math.max(2, Math.min(10, Math.floor(count)));
-          commit('TEAM_COUNT_CHANGED', `Set team count to ${safeCount}`, (state) => {
-            const current = state.teams;
-            const teams = safeCount > current.length
-              ? [...current, ...Array.from({ length: safeCount - current.length }, (_, i) => ({ id: current.length + i + 1, name: `Team ${current.length + i + 1}`, score: 0 }))]
-              : current.slice(0, safeCount);
-            return { teams, directTeamIndex: 0 };
-          }, { count: safeCount });
-        },
-
-        updateTeamName: (id, name) => {
-          commit('TEAM_RENAMED', `Renamed Team ${id}`, (state) => ({
-            teams: state.teams.map((team) => team.id === id ? { ...team, name } : team),
-          }), { teamId: id, name });
-        },
-
-        manualAdjustScore: (id, delta) => {
-          if (!Number.isFinite(delta) || delta === 0) return;
-          commit('SCORE_ADJUSTED', `Adjusted Team ${id} by ${delta > 0 ? '+' : ''}${delta}`, (state) => ({
-            teams: state.teams.map((team) => team.id === id ? { ...team, score: team.score + delta } : team),
-          }), { teamId: id, delta });
-        },
-
-        setDirectTeam: (index) => {
-          commit('SCORE_ADJUSTED', `Changed direct team`, () => ({ directTeamIndex: index }));
-        },
-
-        switchRound: (roundNum) => {
-          const { teams } = get();
-          if (roundNum === 2) {
-            commit('ROUND_SWITCHED', 'Switched to Round 2', () => ({
-              roundNumber: 2,
-              roundName: 'Round 2',
-              bounceDirection: 'anticlockwise',
-              questionNumber: 1,
-              directTeamIndex: teams.length - 1,
-              phase: 'IDLE',
-              timerSeconds: 30,
-              isTimerRunning: false,
-              pounces: {},
-              bounceCustomPoints: {},
-            }));
-          } else {
-            commit('ROUND_SWITCHED', 'Switched to Round 1', () => ({
-              roundNumber: 1,
-              roundName: 'Round 1',
-              bounceDirection: 'clockwise',
-              questionNumber: 1,
-              directTeamIndex: 0,
-              phase: 'IDLE',
-              timerSeconds: 30,
-              isTimerRunning: false,
-              pounces: {},
-              bounceCustomPoints: {},
-            }));
-          }
-        },
-
-        startQuestion: () => {
-          commit('QUESTION_STARTED', `Started ${get().roundName} Q${get().questionNumber}`, () => ({
-            phase: 'POUNCING',
-            timerSeconds: 30,
-            isTimerRunning: true,
-            pounces: {},
-            bounceCustomPoints: {},
-          }));
-        },
-
-        tickTimer: () => {
-          const { timerSeconds, isTimerRunning } = get();
-          if (!isTimerRunning) return;
-          if (timerSeconds <= 1) {
-            set({ timerSeconds: 0, isTimerRunning: false, phase: 'BOUNCING' });
-          } else {
-            set({ timerSeconds: timerSeconds - 1 });
-          }
-        },
-
-        toggleTimer: () => {
-          commit('TIMER_TOGGLED', get().isTimerRunning ? 'Paused pounce timer' : 'Resumed pounce timer', (state) => ({
-            isTimerRunning: !state.isTimerRunning,
-          }));
-        },
-
-        togglePounce: (teamId) => {
-          if (get().phase !== 'POUNCING') return;
-          commit('POUNCE_TOGGLED', `Toggled pounce for Team ${teamId}`, (state) => {
-            const pounces = { ...state.pounces };
-            if (pounces[teamId]) delete pounces[teamId];
-            else pounces[teamId] = 'pending';
-            return { pounces };
-          }, { teamId });
-        },
-
-        skipToBounce: () => {
-          if (get().phase !== 'POUNCING') return;
-          commit('BOUNCE_COMMITTED', 'Moved to bounce selection', () => ({ isTimerRunning: false, phase: 'BOUNCING' }));
-        },
-
-        toggleBounceSelection: (teamId) => {
-          const { bounceCustomPoints, pounces } = get();
-          if (pounces[teamId]) return;
-          commit('BOUNCE_SELECTION_CHANGED', `Toggled Team ${teamId} for bounce`, (state) => {
-            const next = { ...state.bounceCustomPoints };
-            if (next[teamId] !== undefined) {
-              delete next[teamId];
-            } else {
-              const count = Object.keys(next).length + 1;
-              const defaultPoints = count === 1 ? 10 : count === 2 ? 5 : 3.3;
-              Object.keys(next).forEach((key) => { next[Number(key)] = defaultPoints; });
-              next[teamId] = defaultPoints;
-            }
-            return { bounceCustomPoints: next };
-          }, { teamId, previousCount: Object.keys(bounceCustomPoints).length });
-        },
-
-        setBouncePointsForTeam: (teamId, points) => {
-          if (!Number.isFinite(points)) return;
-          commit('BOUNCE_POINTS_CHANGED', `Changed bounce points for Team ${teamId}`, (state) => ({
-            bounceCustomPoints: { ...state.bounceCustomPoints, [teamId]: points },
-          }), { teamId, points });
-        },
-
-        confirmBounceAndReviewPounce: () => {
-          const state = get();
-          let teams = clone(state.teams);
-          Object.entries(state.bounceCustomPoints).forEach(([idStr, points]) => {
-            const id = Number(idStr);
-            teams = teams.map((team) => team.id === id ? { ...team, score: team.score + points } : team);
-          });
-          const hasPounces = Object.keys(state.pounces).length > 0;
-
-          if (hasPounces) {
-            commit('BOUNCE_COMMITTED', 'Committed bounce points; reviewing pounces', () => ({
-              teams,
-              phase: 'POUNCE_REVIEW',
-              isTimerRunning: false,
-            }));
-          } else {
-            commit('QUESTION_FINALIZED', `Completed ${state.roundName} Q${state.questionNumber}`, (current) => ({
-              ...finalizeCurrentQuestion({ ...current, teams }),
-              isTimerRunning: false,
-            }));
-          }
-        },
-
-        setPounceResult: (teamId, status) => {
-          if (!get().pounces[teamId]) return;
-          commit('POUNCE_RESULT_CHANGED', `Marked Team ${teamId} pounce ${status}`, (state) => ({
-            pounces: { ...state.pounces, [teamId]: status },
-          }), { teamId, status });
-        },
-
-        togglePounceReviewKey: (teamId) => {
-          const current = get().pounces[teamId];
-          if (!current) return;
-          const nextStatus = current === 'pending' ? 'correct' : current === 'correct' ? 'incorrect' : 'correct';
-          commit('POUNCE_RESULT_CHANGED', `Changed Team ${teamId} pounce to ${nextStatus}`, (state) => ({
-            pounces: { ...state.pounces, [teamId]: nextStatus },
-          }), { teamId, status: nextStatus });
-        },
-
-        finalizeQuestion: () => {
-          const state = get();
-          if (state.phase !== 'POUNCE_REVIEW') return;
-          commit('QUESTION_FINALIZED', `Completed ${state.roundName} Q${state.questionNumber}`, (current) => ({
-            ...finalizeCurrentQuestion(current),
-            isTimerRunning: false,
-          }));
-        },
-
-        nextQuestion: () => {
-          const state = get();
-          const step = state.bounceDirection === 'clockwise' ? 1 : -1;
-          const nextIndex = (state.directTeamIndex + step + state.teams.length) % state.teams.length;
-          commit('QUESTION_ADVANCED', `Advanced to Q${state.questionNumber + 1}`, () => ({
-            questionNumber: state.questionNumber + 1,
-            directTeamIndex: nextIndex,
-            phase: 'IDLE',
-            timerSeconds: 30,
-            isTimerRunning: false,
-            pounces: {},
-            bounceCustomPoints: {},
-          }));
-        },
-
-        applySpecialRoundScores: (adjustments, specialTitle = 'Special Round') => {
-          commit('SPECIAL_ROUND_APPLIED', `Applied ${specialTitle}`, (state) => {
-            const results: NonNullable<QuestionHistoryEntry['specialRoundResults']> = [];
-            const teams = state.teams.map((team) => {
-              const delta = adjustments[team.id] || 0;
-              if (delta !== 0) results.push({ teamName: team.name, points: delta });
-              return { ...team, score: team.score + delta };
-            });
-            const newLogEntry: QuestionHistoryEntry = {
-              type: 'special_round',
-              roundName: specialTitle,
-              specialRoundResults: results,
-              timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            };
-            return { teams, historyLog: [newLogEntry, ...state.historyLog] };
-          }, { adjustments, specialTitle });
-        },
-
-        resetQuiz: () => {
-          commit('QUIZ_RESET', 'Reset complete quiz', () => ({
-            teams: clone(DEFAULT_TEAMS),
-            questionNumber: 1,
-            roundNumber: 1,
-            roundName: 'Round 1',
-            bounceDirection: 'clockwise',
-            directTeamIndex: 0,
-            phase: 'IDLE',
-            timerSeconds: 30,
-            isTimerRunning: false,
-            pounces: {},
-            bounceCustomPoints: {},
-            historyLog: [],
-            session: makeSession(),
-          }));
-        },
-
-        undo: () => {
-          const state = get();
-          const previous = state.undoStack[state.undoStack.length - 1];
-          if (!previous) return;
-          const current = snapshotFromState(state);
-          set({
-            ...applySnapshot(previous),
-            undoStack: state.undoStack.slice(0, -1),
-            redoStack: [...state.redoStack, current].slice(-MAX_UNDO_STEPS),
-            session: { ...state.session, updatedAt: now() },
-          });
-        },
-
-        redo: () => {
-          const state = get();
-          const next = state.redoStack[state.redoStack.length - 1];
-          if (!next) return;
-          const current = snapshotFromState(state);
-          set({
-            ...applySnapshot(next),
-            undoStack: [...state.undoStack, current].slice(-MAX_UNDO_STEPS),
-            redoStack: state.redoStack.slice(0, -1),
-            session: { ...state.session, updatedAt: now() },
-          });
-        },
-
-        canUndo: () => get().undoStack.length > 0,
-        canRedo: () => get().redoStack.length > 0,
-      };
-    },
-    {
-      name: 'quiz-master-storage',
-      version: 2,
-      migrate: (persistedState: unknown) => {
-        const old = (persistedState || {}) as Partial<QuizStore>;
-        const timestamp = now();
-        return {
-          ...old,
-          events: old.events || [],
-          session: old.session || { id: crypto.randomUUID(), createdAt: timestamp, updatedAt: timestamp },
-          undoStack: [],
-          redoStack: [],
-        };
-      },
-    },
-  ),
-);
-
-useQuizStore.subscribe((state) => broadcastState(state));
+export const useQuizStore = create<QuizStore>()(persist((set, get) => {
+  const commit = (type: QuizEventType, label: string, updater: (state: QuizStore) => Partial<QuizStore>, payload?: Record<string, unknown>) => {
+    const before = snapshotFromState(get());
+    set((state) => ({ ...updater(state), events: [makeEvent(type, label, payload), ...state.events].slice(0, MAX_EVENTS), undoStack: [...state.undoStack, before].slice(-MAX_UNDO_STEPS), redoStack: [], session: { ...state.session, updatedAt: now() } }));
+  };
+  const finalizeCurrentQuestion = (state: QuizStore) => {
+    let updatedTeams = clone(state.teams); const pounceDetails: NonNullable<QuestionHistoryEntry['pounceResults']> = [];
+    Object.entries(state.pounces).forEach(([idStr, status]) => { const id = Number(idStr); const finalStatus = status === 'incorrect' ? 'incorrect' : 'correct'; const delta = finalStatus === 'correct' ? 15 : -10; const targetTeam = state.teams.find((t) => t.id === id); if (targetTeam) pounceDetails.push({ teamName: targetTeam.name, status: finalStatus, points: delta }); updatedTeams = updatedTeams.map((t) => t.id === id ? { ...t, score: t.score + delta } : t); });
+    const bounceResult = Object.keys(state.bounceCustomPoints).length > 0 ? Object.entries(state.bounceCustomPoints).map(([idStr, points]) => ({ teamName: state.teams.find((t) => t.id === Number(idStr))?.name || '', points })) : null;
+    const newLogEntry: QuestionHistoryEntry = { type: 'question', questionNumber: state.questionNumber, roundName: state.roundName, direction: state.bounceDirection, directTeamName: state.teams[state.directTeamIndex]?.name || `Team ${state.directTeamIndex + 1}`, bounceResult, pounceResults: pounceDetails, timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) };
+    return { teams: updatedTeams, phase: 'QUESTION_END' as QuizPhase, historyLog: [newLogEntry, ...state.historyLog] };
+  };
+  return {
+    teams: DEFAULT_TEAMS, questionNumber: 1, roundNumber: 1, roundName: 'Round 1', bounceDirection: 'clockwise', directTeamIndex: 0, phase: 'IDLE', timerSeconds: 30, isTimerRunning: false, pounces: {}, bounceCustomPoints: {}, historyLog: [], events: [], session: makeSession(), undoStack: [], redoStack: [],
+    setTeamCount: (count) => { const safeCount = Math.max(2, Math.min(10, Math.floor(count))); commit('TEAM_COUNT_CHANGED', `Set team count to ${safeCount}`, (state) => { const current = state.teams; const teams = safeCount > current.length ? [...current, ...Array.from({ length: safeCount - current.length }, (_, i) => ({ id: current.length + i + 1, name: `Team ${current.length + i + 1}`, score: 0 }))] : current.slice(0, safeCount); return { teams, directTeamIndex: 0 }; }, { count: safeCount }); },
+    updateTeamName: (id, name) => { const state = get(); const previousName = state.teams.find((team) => team.id === id)?.name || `Team ${id}`; if (previousName === name) return; commit('TEAM_RENAMED', `${previousName} renamed → ${name}`, (current) => ({ teams: current.teams.map((team) => team.id === id ? { ...team, name } : team) }), { teamId: id, previousName, newName: name }); },
+    manualAdjustScore: (id, delta) => { if (!Number.isFinite(delta) || delta === 0) return; commit('SCORE_ADJUSTED', `Adjusted Team ${id} by ${delta > 0 ? '+' : ''}${delta}`, (state) => ({ teams: state.teams.map((team) => team.id === id ? { ...team, score: team.score + delta } : team) }), { teamId: id, delta }); },
+    setDirectTeam: (index) => commit('SCORE_ADJUSTED', 'Changed direct team', () => ({ directTeamIndex: index })),
+    switchRound: (roundNum) => { const { teams } = get(); if (roundNum === 2) commit('ROUND_SWITCHED', 'Switched to Round 2', () => ({ roundNumber: 2, roundName: 'Round 2', bounceDirection: 'anticlockwise', questionNumber: 1, directTeamIndex: teams.length - 1, phase: 'IDLE', timerSeconds: 30, isTimerRunning: false, pounces: {}, bounceCustomPoints: {} })); else commit('ROUND_SWITCHED', 'Switched to Round 1', () => ({ roundNumber: 1, roundName: 'Round 1', bounceDirection: 'clockwise', questionNumber: 1, directTeamIndex: 0, phase: 'IDLE', timerSeconds: 30, isTimerRunning: false, pounces: {}, bounceCustomPoints: {} })); },
+    startQuestion: () => commit('QUESTION_STARTED', `Started ${get().roundName} Q${get().questionNumber}`, () => ({ phase: 'POUNCING', timerSeconds: 30, isTimerRunning: true, pounces: {}, bounceCustomPoints: {} })),
+    tickTimer: () => { const { timerSeconds, isTimerRunning } = get(); if (!isTimerRunning) return; if (timerSeconds <= 1) set({ timerSeconds: 0, isTimerRunning: false, phase: 'BOUNCING' }); else set({ timerSeconds: timerSeconds - 1 }); },
+    toggleTimer: () => commit('TIMER_TOGGLED', get().isTimerRunning ? 'Paused pounce timer' : 'Resumed pounce timer', (state) => ({ isTimerRunning: !state.isTimerRunning })),
+    togglePounce: (teamId) => { if (get().phase !== 'POUNCING') return; commit('POUNCE_TOGGLED', `Toggled pounce for Team ${teamId}`, (state) => { const pounces = { ...state.pounces }; if (pounces[teamId]) delete pounces[teamId]; else pounces[teamId] = 'pending'; return { pounces }; }, { teamId }); },
+    skipToBounce: () => { if (get().phase !== 'POUNCING') return; commit('BOUNCE_COMMITTED', 'Moved to bounce selection', () => ({ isTimerRunning: false, phase: 'BOUNCING' })); },
+    toggleBounceSelection: (teamId) => { const { bounceCustomPoints, pounces } = get(); if (pounces[teamId]) return; commit('BOUNCE_SELECTION_CHANGED', `Toggled Team ${teamId} for bounce`, (state) => { const next = { ...state.bounceCustomPoints }; if (next[teamId] !== undefined) delete next[teamId]; else { const count = Object.keys(next).length + 1; const defaultPoints = count === 1 ? 10 : count === 2 ? 5 : 3.3; Object.keys(next).forEach((key) => { next[Number(key)] = defaultPoints; }); next[teamId] = defaultPoints; } return { bounceCustomPoints: next }; }, { teamId, previousCount: Object.keys(bounceCustomPoints).length }); },
+    setBouncePointsForTeam: (teamId, points) => { if (!Number.isFinite(points)) return; commit('BOUNCE_POINTS_CHANGED', `Changed bounce points for Team ${teamId}`, (state) => ({ bounceCustomPoints: { ...state.bounceCustomPoints, [teamId]: points } }), { teamId, points }); },
+    confirmBounceAndReviewPounce: () => { const state = get(); let teams = clone(state.teams); Object.entries(state.bounceCustomPoints).forEach(([idStr, points]) => { const id = Number(idStr); teams = teams.map((team) => team.id === id ? { ...team, score: team.score + points } : team); }); const hasPounces = Object.keys(state.pounces).length > 0; if (hasPounces) commit('BOUNCE_COMMITTED', 'Committed bounce points; reviewing pounces', () => ({ teams, phase: 'POUNCE_REVIEW', isTimerRunning: false })); else commit('QUESTION_FINALIZED', `Completed ${state.roundName} Q${state.questionNumber}`, (current) => ({ ...finalizeCurrentQuestion({ ...current, teams }), isTimerRunning: false })); },
+    setPounceResult: (teamId, status) => { if (!get().pounces[teamId]) return; commit('POUNCE_RESULT_CHANGED', `Marked Team ${teamId} pounce ${status}`, (state) => ({ pounces: { ...state.pounces, [teamId]: status } }), { teamId, status }); },
+    togglePounceReviewKey: (teamId) => { const current = get().pounces[teamId]; if (!current) return; const nextStatus = current === 'pending' ? 'correct' : current === 'correct' ? 'incorrect' : 'correct'; commit('POUNCE_RESULT_CHANGED', `Changed Team ${teamId} pounce to ${nextStatus}`, (state) => ({ pounces: { ...state.pounces, [teamId]: nextStatus } }), { teamId, status: nextStatus }); },
+    finalizeQuestion: () => { const state = get(); if (state.phase !== 'POUNCE_REVIEW') return; commit('QUESTION_FINALIZED', `Completed ${state.roundName} Q${state.questionNumber}`, (current) => ({ ...finalizeCurrentQuestion(current), isTimerRunning: false })); },
+    nextQuestion: () => { const state = get(); const step = state.bounceDirection === 'clockwise' ? 1 : -1; const nextIndex = (state.directTeamIndex + step + state.teams.length) % state.teams.length; commit('QUESTION_ADVANCED', `Advanced to Q${state.questionNumber + 1}`, () => ({ questionNumber: state.questionNumber + 1, directTeamIndex: nextIndex, phase: 'IDLE', timerSeconds: 30, isTimerRunning: false, pounces: {}, bounceCustomPoints: {} })); },
+    applySpecialRoundScores: (adjustments, specialTitle = 'Special Round') => commit('SPECIAL_ROUND_APPLIED', `Applied ${specialTitle}`, (state) => { const results: NonNullable<QuestionHistoryEntry['specialRoundResults']> = []; const teams = state.teams.map((team) => { const delta = adjustments[team.id] || 0; if (delta !== 0) results.push({ teamName: team.name, points: delta }); return { ...team, score: team.score + delta }; }); return { teams, historyLog: [{ type: 'special_round', roundName: specialTitle, specialRoundResults: results, timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }, ...state.historyLog] }; }, { adjustments, specialTitle }),
+    resetQuiz: () => set({ teams: clone(DEFAULT_TEAMS), questionNumber: 1, roundNumber: 1, roundName: 'Round 1', bounceDirection: 'clockwise', directTeamIndex: 0, phase: 'IDLE', timerSeconds: 30, isTimerRunning: false, pounces: {}, bounceCustomPoints: {}, historyLog: [], events: [], session: makeSession(), undoStack: [], redoStack: [] }),
+    undo: () => { const state = get(); const previous = state.undoStack[state.undoStack.length - 1]; if (!previous) return; const current = snapshotFromState(state); set({ ...applySnapshot(previous), undoStack: state.undoStack.slice(0, -1), redoStack: [...state.redoStack, current].slice(-MAX_UNDO_STEPS), session: { ...state.session, updatedAt: now() } }); },
+    redo: () => { const state = get(); const next = state.redoStack[state.redoStack.length - 1]; if (!next) return; const current = snapshotFromState(state); set({ ...applySnapshot(next), undoStack: [...state.undoStack, current].slice(-MAX_UNDO_STEPS), redoStack: state.redoStack.slice(0, -1), session: { ...state.session, updatedAt: now() } }); },
+    canUndo: () => get().undoStack.length > 0,
+    canRedo: () => get().redoStack.length > 0,
+  };
+}, { name: 'quiz-master-storage' }));
