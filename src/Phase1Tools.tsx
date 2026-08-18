@@ -5,12 +5,12 @@ import { useQuizStore } from './store';
 type EventView = { id: string; type: string; label: string; timestamp: string; payload?: Record<string, unknown> };
 type Details = { quizName: string; organizer: string; quizmaster: string; venue: string; notes: string };
 const DETAILS_KEY = 'quiz-session-details';
-const IGNORED = new Set(['TIMER_TOGGLED']);
+const IGNORED = new Set(['TIMER_TOGGLED', 'POUNCE_TOGGLED', 'BOUNCE_SELECTION_CHANGED', 'BOUNCE_POINTS_CHANGED', 'POUNCE_RESULT_CHANGED']);
 const standingsNotes = (teams: { name: string; score: number }[]) => [...teams].sort((a, b) => b.score - a.score).slice(0, 8).map((team, i) => `${i + 1}. ${team.name} — ${team.score} pts`).join('\n');
 const defaultDetails = (teams: { name: string; score: number }[]): Details => ({ quizName: '', organizer: 'Headrush', quizmaster: '', venue: 'CEP 110', notes: standingsNotes(teams) });
 const loadDetails = (teams: { name: string; score: number }[]): Details => { const defaults = defaultDetails(teams); try { const raw = localStorage.getItem(DETAILS_KEY); if (!raw) return defaults; const saved = JSON.parse(raw) as Partial<Details>; return { quizName: saved.quizName || '', organizer: saved.organizer || 'Headrush', quizmaster: saved.quizmaster || '', venue: saved.venue || 'CEP 110', notes: saved.notes || defaults.notes }; } catch { return defaults; } };
 const downloadJSON = (data: unknown, filename: string) => { const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }); const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = filename; document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url); };
-function formatEvent(event: EventView) { const payload = event.payload || {}; if (event.type === 'TEAM_RENAMED') { const previous = typeof payload.previousName === 'string' ? payload.previousName : `Team ${payload.teamId ?? ''}`; const next = typeof payload.newName === 'string' ? payload.newName : typeof payload.name === 'string' ? payload.name : event.label; return `${previous} renamed → ${next}`; } if (event.type === 'TEAM_COUNT_CHANGED') return `Team count changed → ${payload.count}`; return event.label; }
+function formatEvent(event: EventView) { const payload = event.payload || {}; if (event.type === 'TEAM_RENAMED') return `Team ${payload.teamId ?? ''} renamed`; if (event.type === 'TEAM_COUNT_CHANGED') return `Team count → ${payload.count}`; return event.label; }
 
 export default function Phase1Tools() {
   const events = useQuizStore((s) => s.events) as EventView[]; const session = useQuizStore((s) => s.session); const teams = useQuizStore((s) => s.teams); const undoStack = useQuizStore((s) => s.undoStack); const redoStack = useQuizStore((s) => s.redoStack); const undo = useQuizStore((s) => s.undo); const redo = useQuizStore((s) => s.redo); const resetQuizNow = useQuizStore((s) => s.resetQuizNow);
