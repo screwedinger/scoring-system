@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
 import Phase1Tools from './Phase1Tools'
+import SessionManager from './SessionManager'
 import { installQuizKeyboardShortcuts } from './keyboardShortcuts'
 
 const removeQuizKeyboardShortcuts = installQuizKeyboardShortcuts()
@@ -11,6 +12,7 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <App />
     <Phase1Tools />
+    <SessionManager />
   </StrictMode>,
 )
 
